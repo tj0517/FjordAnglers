@@ -40,17 +40,9 @@ export default function Hero() {
       {/* Content */}
       <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center pt-24 pb-16">
         {/* Trust signal */}
-        <div className="flex justify-center md:justify-end mb-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur-sm px-4 py-2">
-            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-            <span className="text-sm font-medium text-white">
-              5.0 | 500+ Anglers Trust Us
-            </span>
-          </div>
-        </div>
 
         {/* Eyebrow */}
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/80 mb-4">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/80 mb-4 mt-24">
           Discover the Fjords
         </p>
 
