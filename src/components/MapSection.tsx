@@ -88,7 +88,6 @@ export default function MapSection() {
 
     useEffect(() => {
         setIsClient(true);
-        import("leaflet/dist/leaflet.css");
     }, []);
 
     const popularLocations = locations.filter((loc) => loc.popular);
@@ -96,7 +95,13 @@ export default function MapSection() {
 
     return (
         <section id="explore-map" className="relative z-0 py-16 md:py-28 bg-navy-dark overflow-hidden">
-            {/* Hide Leaflet attribution and style zoom controls */}
+            {/* Leaflet CSS and custom styles */}
+            <link
+                rel="stylesheet"
+                href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+                crossOrigin=""
+            />
             <style jsx global>{`
                 .leaflet-control-attribution {
                     display: none !important;
