@@ -1,0 +1,46 @@
+# Implementation Plan - Landing Page Refactor
+
+## Goal Description
+Refactor the current homepage to a specific landing page for inviting fishing guides. The original homepage will be moved to a new route (e.g., `/explore`) to preserve it but keep it hidden from the main entry point. The new landing page will focus on the company's mission/vision and include a detailed form for guides to express interest and provide feedback.
+
+## User Review Required
+> [!IMPORTANT]
+> The current homepage at `/` will be replaced. The old content will be moved to `/explore`. Please confirm if `/explore` is the desired route name.
+
+> [!NOTE]
+> The new landing page will require new components: `MissionSection`, `VisionSection`, and `GuideForm`.
+
+## Proposed Changes
+
+### Routing & file structure
+#### [NEW] [Explore Page]
+- Create `src/app/explore/page.tsx`.
+- Move content from [src/app/page.tsx](file:///Users/tymonjezionek/Desktop/fjordAnglers/web/src/app/page.tsx) to `src/app/explore/page.tsx`.
+
+#### [MODIFY] [Root Page](file:///Users/tymonjezionek/Desktop/fjordAnglers/web/src/app/page.tsx)
+- Replace content with new components:
+    - `<Navbar />` (keep or modify?)
+    - `<HeroSimple />` (New component for simple mission statement)
+    - `<MissionVision />` (New component)
+    - `<GuideForm />` (New form component)
+    - `<Footer />`
+
+### Components
+#### [NEW] [GuideForm](file:///Users/tymonjezionek/Desktop/fjordAnglers/web/src/components/GuideForm.tsx)
+- Fields:
+    - Name
+    - Email
+    - Location/Region
+    - Experience (Years)
+    - "What are your biggest pain points?" (Textarea)
+    - "What features would you like to see?" (Textarea)
+- Submission logic (initially `console.log` or a mock server action).
+
+#### [NEW] [MissionVision](file:///Users/tymonjezionek/Desktop/fjordAnglers/web/src/components/MissionVision.tsx)
+- Text content explaining the platform's goal.
+
+## Verification Plan
+### Manual Verification
+- Verify `/` loads the new landing page with the form.
+- Verify `/explore` loads the old homepage.
+- Test form submission (check logs).

@@ -1,25 +1,19 @@
-import Navbar from "@/components/Navbar";
-import Hero from "@/components/Hero";
-import FeaturedDestinations from "@/components/FeaturedDestinations";
-import WhyChooseUs from "@/components/WhyChooseUs";
-import MapSection from "@/components/MapSection";
-import EmailSignup from "@/components/EmailSignup";
-import Footer from "@/components/Footer";
-import HowItWorks from "@/components/HowItWorks";
+import NavbarLanding from "@/components/NavbarLanding";
+import HeroSimple from "@/components/HeroSimple";
+import MissionVision from "@/components/MissionVision";
+import GuideForm from "@/components/GuideForm";
+import FooterLanding from "@/components/FooterLanding";
 
 export default function Home() {
   return (
     <>
-      <Navbar />
+      <NavbarLanding />
       <main>
-        <Hero />
-        <FeaturedDestinations />
-        <WhyChooseUs />
-        <MapSection />
-        <HowItWorks />
-        <EmailSignup />
+        <HeroSimple />
+        <MissionVision />
+        <GuideForm />
       </main>
-      <Footer />
+      <FooterLanding />
     </>
   );
 }
