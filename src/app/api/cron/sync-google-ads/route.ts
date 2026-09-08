@@ -59,7 +59,12 @@ export async function POST(req: NextRequest) {
     console.log(`[sync-google-ads] Synced ${rows.length} campaigns for ${date}`)
     return NextResponse.json({ synced: rows.length, date })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message =
+      err instanceof Error
+        ? err.message
+        : err != null && typeof err === 'object'
+          ? JSON.stringify(err, Object.getOwnPropertyNames(err))
+          : String(err)
     console.error('[sync-google-ads] error:', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }

@@ -124,6 +124,17 @@ pnpm typecheck && pnpm lint && pnpm build
 - **Surowe logowanie błędu w `fetch-campaigns.ts`** — try/catch wokół `customer.query(...)` loguje
   `JSON.stringify(err, Object.getOwnPropertyNames(err))` + `err.errors`, `err.code`, `err.details`,
   `err.request_id`. Evidence: `src/lib/google-ads/fetch-campaigns.ts:23-53`.
+  Kryterium „log serwera pokazuje kod błędu Google" SPEŁNIONE — tj uruchomił cron lokalnie
+  po merge'u i log pokazał `error_code: { authentication_error: 8 }`,
+  `No customer found for the provided customer id.`, `request_id`. Dekoder crashuje tylko
+  na błędach `google.rpc.ErrorInfo` (poziom GCP); zwykłe `GoogleAdsFailure` dekodują się
+  poprawnie i nasza pętla try/catch loguje je w całości.
+
+- **Serializacja błędu w catch trasy (review fix)** — `route.ts:62` zmieniło `String(err)` dla
+  nie-Error obiektów na `JSON.stringify(err, Object.getOwnPropertyNames(err))` z fallbackiem
+  na `String(err)`, tak że HTTP response i `console.error` niosą to samo co log `fetch-campaigns.ts`.
+  Poprzednio curl zwracał `{"error":"[object Object]"}` zamiast surowego błędu Google.
+  Evidence: `src/app/api/cron/sync-google-ads/route.ts:62-67`.
 
 - **Surowy kod błędu Google znaleziony** — uruchomiono skrypt diagnostyczny CJS (`scripts/diag-google-ads.cjs`,
   usunięty po użyciu), który monkey-patchuje `Service.prototype.getGoogleAdsError` przed wywołaniem,
@@ -166,12 +177,12 @@ pnpm typecheck && pnpm lint && pnpm build
 
 ### Not done
 
-- **Log serwera w PRODUKCJI nie pokazuje `SERVICE_DISABLED` wprost** — z powodu bugu w
-  `google-ads-api@24.1.0` (`service.js:112`: `internalRepr` → `_internal_repr` w nowszym grpc-js),
-  `getGoogleAdsError` crasha zanim częściowo zdekodowany `ErrorInfo` dotrze do naszego try/catch
-  w `fetch-campaigns.ts`. W logu produkcyjnym nadal widać `TypeError: Cannot read properties of
-  undefined (reading 'get')`. Kod `SERVICE_DISABLED` uzyskano przez monkey-patch w skrypcie
-  diagnostycznym — nie jest widoczny w standardowym logowaniu. Odnotowane w deferred-tasks.md.
+- **`getGoogleAdsError` bug dla błędów `google.rpc.ErrorInfo`** — `google-ads-api@24.1.0` crashuje
+  na `internalRepr.get()` gdy Google zwraca `ErrorInfo` (poziom GCP, np. `SERVICE_DISABLED`),
+  bo grpc-js zmienił nazwę właściwości na `_internal_repr`. Dla tych błędów log serwera nadal
+  pokazuje `TypeError`, nie `SERVICE_DISABLED`. Dla zwykłych `GoogleAdsFailure` (poziom API,
+  np. `authentication_error: 8`) dekoder działa i kod jest widoczny w logu. Patch
+  `getGoogleAdsError` jest zadaniem S w `docs/deferred-tasks.md`.
 
 ### Noticed, not touched (→ docs/deferred-tasks.md)
 
@@ -203,6 +214,10 @@ pnpm typecheck
 pnpm exec eslint src/lib/ads/campaigns.ts src/actions/ads.ts \
   src/app/api/cron/sync-google-ads/route.ts src/lib/google-ads/fetch-campaigns.ts
 # → brak output (exit 0)
+
+# route.ts catch — serializes non-Error objects properly
+# before fix: curl → {"error":"[object Object]"}
+# after fix:  curl → {"error":"{\"errors\":[{\"error_code\":{\"authentication_error\":8},...}],...}"}
 
 # build
 pnpm build
