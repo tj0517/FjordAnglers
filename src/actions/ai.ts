@@ -11,6 +11,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { env } from '@/lib/env'
+import { requireAdmin } from '@/lib/auth/guards'
 import {
   extractTripDetails,
   assembleConversation,
@@ -35,6 +36,7 @@ export async function setAgentStatus(
   inquiryId: string,
   status: 'waiting' | 'stopped',
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
   const { error } = await svc
     .from('inquiries')
@@ -59,6 +61,7 @@ export async function setAgentStatus(
 export async function extractTripDetailsAI(
   inquiryId: string,
 ): Promise<ExtractTripDetailsResult> {
+  await requireAdmin()
   const apiKey = env.ANTHROPIC_API_KEY
   if (!apiKey) {
     return { success: false, error: 'ANTHROPIC_API_KEY is not configured' }

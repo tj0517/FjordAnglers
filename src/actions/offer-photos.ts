@@ -15,10 +15,12 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/guards'
 
 export async function uploadOfferPhoto(
   formData: FormData,
 ): Promise<{ url: string } | { error: string }> {
+  await requireAdmin()
   const file = formData.get('file') as File | null
   if (file == null) return { error: 'No file provided' }
 

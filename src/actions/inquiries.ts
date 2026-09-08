@@ -24,7 +24,7 @@
  *   Message is stored in inquiry_messages for audit trail.
  */
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { createInquiry } from '@/lib/inquiries/create'
 import { stripe } from '@/lib/stripe/client'
 import { env } from '@/lib/env'
@@ -36,6 +36,7 @@ import {
   sendGuideAssignedEmail,
 } from '@/lib/email'
 import { revalidatePath } from 'next/cache'
+import { requireAdmin, requireGuide, requireToken, UnauthorizedError } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,6 +157,7 @@ export async function createManualInquiry(params: {
   channel:        string | null
   status:         string
 }): Promise<ActionResult & { inquiryId?: string }> {
+  await requireAdmin()
   if (params.anglerName.trim() === '') return { success: false, error: 'Name is required' }
   if (params.anglerEmail.trim() === '') return { success: false, error: 'Email is required' }
   if (params.partySize < 1) return { success: false, error: 'Party size must be at least 1' }
@@ -204,6 +206,7 @@ export async function sendDepositLink(
   inquiryId: string,
   depositPercent: number = 30,
 ): Promise<SendDepositLinkResult> {
+  await requireAdmin()
   if (depositPercent < 1 || depositPercent > 100) {
     return { success: false, error: 'depositPercent must be 1–100' }
   }
@@ -329,6 +332,7 @@ export async function saveRichOffer(
   inquiryId: string,
   params: RichOfferParams,
 ): Promise<ActionResult & { offerUrl?: string }> {
+  await requireAdmin()
   const {
     totalPriceEur, depositEur, notes,
     tripPlan, licenseInfo, licenseHeading, inclusions,
@@ -501,21 +505,19 @@ export async function submitOfferAnswers(
   token: string,
   answers: OfferAnswer[],
 ): Promise<SendDepositLinkResult> {
+  const { id: inquiryId } = await requireToken('offer', token)
+
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: inquiry } = await (svc as any)
     .from('inquiries')
-    .select('id, status, angler_email, angler_name, trip_id, party_size, offer_deposit_eur, offer_token_expires_at')
-    .eq('offer_token', token)
+    .select('id, status, angler_email, angler_name, trip_id, party_size, offer_deposit_eur')
+    .eq('id', inquiryId)
     .single()
 
   if (inquiry == null) {
     return { success: false, error: 'Offer not found or link has expired' }
-  }
-
-  if (inquiry.offer_token_expires_at != null && new Date(inquiry.offer_token_expires_at) < new Date()) {
-    return { success: false, error: 'This offer link has expired. Please contact us for a new one.' }
   }
 
   if (['deposit_paid', 'completed', 'cancelled'].includes(inquiry.status)) {
@@ -630,6 +632,7 @@ export async function updateInquiryStatus(
   status: string,
   lostReason?: string | null,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const update: Record<string, any> = { status }
@@ -668,6 +671,7 @@ export async function saveInternalDeal(
     dealCurrency:  'EUR' | 'USD'
   },
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -696,6 +700,7 @@ export async function sendMessageToAngler(
   subject: string,
   body: string,
 ): Promise<ActionResult> {
+  await requireAdmin()
   if (subject.trim() === '') return { success: false, error: 'Subject is required' }
   if (body.trim() === '')    return { success: false, error: 'Message body is required' }
 
@@ -770,6 +775,7 @@ export async function logLeadMessage(
   inquiryId: string,
   params: LogLeadMessageParams,
 ): Promise<ActionResult> {
+  await requireAdmin()
   if (params.content.trim()     === '') return { success: false, error: 'Content is required' }
   if (params.contactName.trim() === '') return { success: false, error: 'Contact name is required' }
 
@@ -825,6 +831,7 @@ export async function bulkLogLeadMessages(
   inquiryId: string,
   messages:  BulkLeadMessage[],
 ): Promise<ActionResult & { count?: number }> {
+  await requireAdmin()
   if (messages.length === 0) return { success: false, error: 'No messages to save' }
 
   const svc = createServiceClient()
@@ -871,6 +878,7 @@ export async function bulkLogLeadMessages(
  * Internal only — no email sent.
  */
 export async function deleteInquiry(inquiryId: string): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -887,6 +895,7 @@ export async function updateRequestedDates(
   inquiryId: string,
   dates: string[],
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // Normalise: keep only valid YYYY-MM-DD values, remove duplicates, sort ascending
   const clean = [...new Set(
@@ -909,6 +918,7 @@ export async function updateNextAction(
   inquiryId: string,
   nextAction: string | null,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -958,6 +968,7 @@ export async function assignGuideToInquiry(
   inquiryId: string,
   guideId: string,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // Update inquiry
@@ -999,7 +1010,6 @@ export async function assignGuideToInquiry(
     .single()
 
   // Fetch trip brief (graceful — table may not exist yet)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tripDetails: Record<string, unknown> | null = null
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1049,6 +1059,7 @@ export async function assignGuideToInquiry(
  * Clears assignment fields so a new guide can be assigned.
  */
 export async function unassignGuide(inquiryId: string): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1083,6 +1094,7 @@ export async function setExternalOffer(
   inquiryId: string,
   value: boolean,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1105,6 +1117,7 @@ export async function assignGuideSilently(
   inquiryId: string,
   guideId: string,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1138,18 +1151,9 @@ export async function respondToAssignment(
   accepted: boolean,
   declineReason?: string,
 ): Promise<ActionResult> {
-  const userClient = await createClient()
-  const { data: { user } } = await userClient.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
   const svc = createServiceClient()
-
-  const { data: guide } = await svc
-    .from('guides')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-  if (guide == null) return { success: false, error: 'Guide profile not found' }
 
   // Verify the inquiry is assigned to this guide
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1160,7 +1164,7 @@ export async function respondToAssignment(
     .eq('assigned_guide_id', guide.id)
     .single()
 
-  if (inquiry == null) return { success: false, error: 'Inquiry not found or not assigned to you' }
+  if (inquiry == null) throw new UnauthorizedError('Inquiry not found or not assigned to you')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1193,18 +1197,20 @@ export async function saveGuideOfferEta(
   inquiryId: string,
   eta: string,
 ): Promise<ActionResult> {
-  const userClient = await createClient()
-  const { data: { user } } = await userClient.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
   const svc = createServiceClient()
 
-  const { data: guide } = await svc
-    .from('guides')
+  // Verify ownership — like saveGuideOfferResponse; prevents silent "0 rows updated"
+  // when the inquiry is assigned to a different guide.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: owned } = await (svc as any)
+    .from('inquiries')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('id', inquiryId)
+    .eq('assigned_guide_id', guide.id)
     .single()
-  if (guide == null) return { success: false, error: 'Guide profile not found' }
+  if (owned == null) throw new UnauthorizedError('Inquiry not found or not assigned to you')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1230,6 +1236,7 @@ export async function saveTripDetails(
   inquiryId: string,
   data: Partial<Omit<TripDetails, never>>,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1262,18 +1269,9 @@ export async function saveGuideOfferResponse(
     guide_options: GuideOption[]
   },
 ): Promise<ActionResult> {
-  const userClient = await createClient()
-  const { data: { user } } = await userClient.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
   const svc = createServiceClient()
-
-  const { data: guide } = await svc
-    .from('guides')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-  if (guide == null) return { success: false, error: 'Guide profile not found' }
 
   // Verify ownership
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1283,7 +1281,7 @@ export async function saveGuideOfferResponse(
     .eq('id', inquiryId)
     .eq('assigned_guide_id', guide.id)
     .single()
-  if (inquiry == null) return { success: false, error: 'Inquiry not found or not assigned to you' }
+  if (inquiry == null) throw new UnauthorizedError('Inquiry not found or not assigned to you')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1315,6 +1313,7 @@ export async function saveOfferDraft(
   inquiryId: string,
   params: RichOfferParams,
 ): Promise<ActionResult & { offerUrl?: string }> {
+  await requireAdmin()
   const {
     totalPriceEur, depositEur, notes,
     tripPlan, licenseInfo, licenseHeading, inclusions,
@@ -1399,6 +1398,7 @@ export async function saveOfferDraft(
 export async function sendOfferEmail(
   inquiryId: string,
 ): Promise<ActionResult & { offerUrl?: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1449,20 +1449,18 @@ export async function acceptOffer(
   answers: OfferAnswer[],
   selectedOptionId?: string,
 ): Promise<ActionResult> {
+  const { id: inquiryId } = await requireToken('offer', token)
+
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: inquiry } = await (svc as any)
     .from('inquiries')
-    .select('id, status, offer_token_expires_at')
-    .eq('offer_token', token)
+    .select('id, status')
+    .eq('id', inquiryId)
     .single()
 
   if (inquiry == null) return { success: false, error: 'Offer not found or link has expired' }
-
-  if (inquiry.offer_token_expires_at != null && new Date(inquiry.offer_token_expires_at) < new Date()) {
-    return { success: false, error: 'This offer link has expired' }
-  }
 
   if (['deposit_paid', 'completed', 'cancelled', 'lost'].includes(inquiry.status)) {
     return { success: false, error: `Inquiry is already ${inquiry.status}` }
@@ -1497,13 +1495,15 @@ export async function declineOffer(
   token: string,
   note: string | null,
 ): Promise<ActionResult> {
+  const { id: inquiryId } = await requireToken('offer', token)
+
   const svc = createServiceClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: inquiry } = await (svc as any)
     .from('inquiries')
-    .select('id, status, offer_token_expires_at')
-    .eq('offer_token', token)
+    .select('id, status')
+    .eq('id', inquiryId)
     .single()
 
   if (inquiry == null) return { success: false, error: 'Offer not found' }
@@ -1541,6 +1541,7 @@ export async function updateInquiryGuide(
   inquiryId: string,
   guideId: string | null,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
@@ -1554,6 +1555,7 @@ export async function updateInquiryGuide(
 }
 
 export async function deleteUnmatchedMessages(ids: string[]): Promise<ActionResult> {
+  await requireAdmin()
   if (ids.length === 0) return { success: true }
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

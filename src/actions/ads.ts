@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ export interface CampaignDefRow {
 export async function addAdCampaign(
   data: AdCampaignInsert,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('ad_campaigns').insert(data)
   if (error) return { success: false, error: error.message }
@@ -53,6 +55,7 @@ export async function addAdCampaign(
 export async function upsertAdCampaignRows(
   rows: AdCampaignInsert[],
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   if (rows.length === 0) return { success: true }
   const supabase = createServiceClient()
   const { error } = await supabase.from('ad_campaigns')
@@ -67,6 +70,7 @@ export async function getAdCampaignRows(
   dateFrom: string,
   dateTo: string,
 ): Promise<AdCampaignRow[]> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { data } = await supabase.from('ad_campaigns')
     .select('*')
@@ -79,6 +83,7 @@ export async function getAdCampaignRows(
 // ─── Campaign Definition Actions ──────────────────────────────────────────────
 
 export async function getCampaignDefs(): Promise<CampaignDefRow[]> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { data } = await supabase.from('ad_campaign_defs')
     .select('id, created_at, key, name, platform, sort_order, active, google_campaign_id')
@@ -92,6 +97,7 @@ export async function addCampaignDef(data: {
   name: string
   platform: 'google_ads' | 'meta'
 }): Promise<{ success: boolean; error?: string; row?: CampaignDefRow }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { data: existing } = await supabase.from('ad_campaign_defs')
     .select('sort_order')
@@ -110,6 +116,7 @@ export async function addCampaignDef(data: {
 export async function deleteAdCampaignRow(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('ad_campaigns').delete().eq('id', id)
   if (error) return { success: false, error: error.message }
@@ -120,6 +127,7 @@ export async function deleteAdCampaignRow(
 export async function deleteCampaignDef(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('ad_campaign_defs')
     .update({ active: false })

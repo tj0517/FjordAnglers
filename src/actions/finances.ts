@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export interface ManualCostEntryInput {
 export async function addFixedCost(
   data: FixedCostInput,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('fixed_costs').insert({
     ...data,
@@ -65,6 +67,7 @@ export async function updateFixedCost(
   id: string,
   data: Partial<FixedCostInput>,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('fixed_costs')
     .update({ ...data, updated_at: new Date().toISOString() })
@@ -77,6 +80,7 @@ export async function updateFixedCost(
 export async function deleteFixedCost(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('fixed_costs')
     .update({ active: false, updated_at: new Date().toISOString() })
@@ -89,6 +93,7 @@ export async function deleteFixedCost(
 export async function addManualCostEntry(
   data: ManualCostEntryInput,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('manual_cost_entries').insert({
     month: data.month,
@@ -105,6 +110,7 @@ export async function addManualCostEntry(
 export async function deleteManualCostEntry(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('manual_cost_entries').delete().eq('id', id)
   if (error) return { success: false, error: error.message }
@@ -115,6 +121,7 @@ export async function deleteManualCostEntry(
 export async function updateEurRate(
   rate: number,
 ): Promise<{ success: boolean; error?: string }> {
+  await requireAdmin()
   const supabase = createServiceClient()
   const { error } = await supabase.from('finance_settings')
     .upsert({ key: 'eur_pln_rate', value: String(rate), updated_at: new Date().toISOString() })

@@ -9,6 +9,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ export type ExperiencePageResult =
 export async function createExperiencePage(
   payload: ExperiencePagePayload,
 ): Promise<ExperiencePageResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   const cleanSlug = payload.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -211,6 +213,7 @@ export async function createExperiencePage(
 // Returns the number of rows updated.
 
 export async function publishAllDrafts(): Promise<{ published: number; error?: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   const { data, error } = await svc
@@ -235,6 +238,7 @@ export async function updateExperiencePage(
   id: string,
   payload: Partial<ExperiencePagePayload>,
 ): Promise<ExperiencePageResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   const { data: existing } = await svc
@@ -353,6 +357,7 @@ export async function createExperiencePageOption(
   experiencePageId: string,
   payload: ExperiencePageOptionPayload,
 ): Promise<ExperiencePageOptionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // Determine next sort_order
@@ -407,6 +412,7 @@ export async function updateExperiencePageOption(
   optionId: string,
   payload: Partial<ExperiencePageOptionPayload>,
 ): Promise<{ success: true } | { success: false; error: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   const update: Record<string, unknown> = {}
@@ -453,6 +459,7 @@ export async function updateExperiencePageOption(
 export async function deleteExperiencePageOption(
   optionId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // Look up before delete so we can revalidate the public page afterwards

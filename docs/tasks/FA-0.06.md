@@ -2,7 +2,7 @@
 id: FA-0.06
 title: requireAdmin() we wszystkich mutujących server actions (dziś 28 akcji w inquiries.ts bez sprawdzenia)
 stage: 0
-status: todo
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -62,4 +62,140 @@ pnpm typecheck && pnpm lint && pnpm build
 ```
 
 ## Notatki z realizacji
+
+**2026-09-08** — FA-0.06 complete on branch `fix/require-admin-actions`.
+
+### Zrobione
+- `src/lib/auth/guards.ts` (already committed) — `requireAdmin()`, `requireGuide()`, `requireToken(kind, token)`; each throws `UnauthorizedError`
+- 15 action files updated: `admin.ts`, `guide-forms.ts`, `inquiries.ts`, `ads.ts`, `finances.ts`, `messages.ts`, `experience-pages.ts`, `reviews.ts`, `ai.ts`, `offer-photos.ts`, `review-media.ts`, `guide-photos.ts`, `submissions.ts`, `availability.ts`, `dashboard.ts`
+- Inline token validation removed from `submitOfferAnswers`, `acceptOffer`, `declineOffer`, `submitReview`, `getReviewUploadUrl` — replaced with `requireToken()`
+- Inline guide auth removed from `respondToAssignment`, `saveGuideOfferEta`, `saveGuideOfferResponse`, `saveGuidePhotos`, `createGuideSubmission`, `setOpenSeason`, `setAvailability`, `acceptGuideTerms`, `updateGuideProfile` — replaced with `requireGuide()`
+- `createGuideProfile` — preserved with explanatory comment (no `guides` row yet at first login)
+- `src/actions/__tests__/authorization.test.ts` — 12 unit tests, all green (no session, non-admin, wrong guide ownership, expired token)
+- `pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build` — all green
+
+### Not done / deferred
+- `contentType` param in `getReviewUploadUrl` not forwarded to storage call — S task in deferred-tasks.md
+- `revalidateTag` called with two args in `dashboard.ts` — S task in deferred-tasks.md
+
+### Justified exceptions (no guard)
+- `getOfferByToken`, `getInquiryConfirmation` — public reads, intentionally unguarded
+- `getReviewByToken` — public read
+- `getFormByToken` — public read; returns form for anonymous angler intake
+- `submitIntakeResponse` — token-validated by `is_active` flag on `guide_intake_forms`; `requireToken()` was not extended to kind `'intake'` because `guide_intake_forms` has no `*_expires_at` column (only `is_active`); the existing `is_active` check is the correct access control for this endpoint
+- `auth.ts (signUp, deleteAccount, resetPassword)` — signUp uses service client for admin.createUser (self-registration, role now clamped to `'angler'|'guide'` at runtime); deleteAccount is self-serve and checks session before service client call; resetPassword is public recovery endpoint via admin.generateLink
+- `auth.ts (signIn, signOut, updatePassword)` — session client only, no service-role writes
+- `dashboard.ts (createGuideProfile)` — no `guides` row exists at first login so `requireGuide()` would always fail; uses `createClient() + auth.getUser()` for auth
+- `stripe-connect.ts` — out of scope (FA-1.07)
+
+### Red proof — ads.ts addAdCampaign
+
+Guard temporarily removed from `addAdCampaign`, test run:
+
+```
+❌ FAIL src/actions/__tests__/authorization.test.ts > ads.ts > addAdCampaign
+   > throws UnauthorizedError when there is no session
+AssertionError: expected TypeError: supabase.from(...).insert is not a function
+  to be an instance of UnauthorizedError
+```
+
+Guard restored, same test:
+
+```
+✓ ads.ts > addAdCampaign > throws UnauthorizedError when there is no session
+```
+
+### Full actor table
+
+| File | Function | Actor | Guard before | Guard after |
+|---|---|---|---|---|
+| admin.ts | createBetaGuide | admin | N (local redirect) | ✓ requireAdmin |
+| admin.ts | deleteGuide | admin | N (local redirect) | ✓ requireAdmin |
+| admin.ts | updateGuide | admin | N (local redirect) | ✓ requireAdmin |
+| admin.ts | linkGuideAccount | admin | N (local redirect) | ✓ requireAdmin |
+| admin.ts | adminSetGuideStatus | admin | N (local redirect) | ✓ requireAdmin |
+| admin.ts | adminSyncStripeStatus | admin | N (local redirect) | ✓ requireAdmin |
+| guide-forms.ts | createIntakeForm | admin | N (local throw, in try) | ✓ requireAdmin |
+| guide-forms.ts | updateIntakeForm | admin | N (local throw, in try) | ✓ requireAdmin |
+| guide-forms.ts | deleteIntakeForm | admin | N (local throw, in try) | ✓ requireAdmin |
+| guide-forms.ts | getForms | admin | N | ✓ requireAdmin |
+| guide-forms.ts | getFormById | admin | N | ✓ requireAdmin |
+| guide-forms.ts | getFormByToken | public | — | unchanged |
+| guide-forms.ts | submitIntakeResponse | token (is_active) | — | unchanged (exception) |
+| inquiries.ts | createManualInquiry | admin | N | ✓ requireAdmin |
+| inquiries.ts | sendDepositLink | admin | N | ✓ requireAdmin |
+| inquiries.ts | saveRichOffer | admin | N | ✓ requireAdmin |
+| inquiries.ts | saveOffer | admin | N | ✓ requireAdmin |
+| inquiries.ts | updateInquiryStatus | admin | N | ✓ requireAdmin |
+| inquiries.ts | saveInternalDeal | admin | N | ✓ requireAdmin |
+| inquiries.ts | sendMessageToAngler | admin | N | ✓ requireAdmin |
+| inquiries.ts | logLeadMessage | admin | N | ✓ requireAdmin |
+| inquiries.ts | bulkLogLeadMessages | admin | N | ✓ requireAdmin |
+| inquiries.ts | deleteInquiry | admin | N | ✓ requireAdmin |
+| inquiries.ts | updateRequestedDates | admin | N | ✓ requireAdmin |
+| inquiries.ts | updateNextAction | admin | N | ✓ requireAdmin |
+| inquiries.ts | assignGuideToInquiry | admin | N | ✓ requireAdmin |
+| inquiries.ts | unassignGuide | admin | N | ✓ requireAdmin |
+| inquiries.ts | setExternalOffer | admin | N | ✓ requireAdmin |
+| inquiries.ts | assignGuideSilently | admin | N | ✓ requireAdmin |
+| inquiries.ts | saveTripDetails | admin | N | ✓ requireAdmin |
+| inquiries.ts | saveOfferDraft | admin | N | ✓ requireAdmin |
+| inquiries.ts | sendOfferEmail | admin | N | ✓ requireAdmin |
+| inquiries.ts | updateInquiryGuide | admin | N | ✓ requireAdmin |
+| inquiries.ts | deleteUnmatchedMessages | admin | N | ✓ requireAdmin |
+| inquiries.ts | respondToAssignment | guide | N (inline) | ✓ requireGuide + ownership |
+| inquiries.ts | saveGuideOfferEta | guide | N (inline, silent) | ✓ requireGuide + ownership |
+| inquiries.ts | saveGuideOfferResponse | guide | N (inline) | ✓ requireGuide + ownership |
+| inquiries.ts | submitOfferAnswers | token | N (inline) | ✓ requireToken('offer') |
+| inquiries.ts | acceptOffer | token | N (inline) | ✓ requireToken('offer') |
+| inquiries.ts | declineOffer | token | N (inline) | ✓ requireToken('offer') |
+| inquiries.ts | getOfferByToken | public | — | unchanged |
+| inquiries.ts | getInquiryConfirmation | public | — | unchanged |
+| ads.ts | addAdCampaign | admin | N | ✓ requireAdmin |
+| ads.ts | upsertAdCampaignRows | admin | N | ✓ requireAdmin |
+| ads.ts | getAdCampaignRows | admin | N | ✓ requireAdmin |
+| ads.ts | getCampaignDefs | admin | N | ✓ requireAdmin |
+| ads.ts | addCampaignDef | admin | N | ✓ requireAdmin |
+| ads.ts | deleteAdCampaignRow | admin | N | ✓ requireAdmin |
+| ads.ts | deleteCampaignDef | admin | N | ✓ requireAdmin |
+| finances.ts | addFixedCost | admin | N | ✓ requireAdmin |
+| finances.ts | updateFixedCost | admin | N | ✓ requireAdmin |
+| finances.ts | deleteFixedCost | admin | N | ✓ requireAdmin |
+| finances.ts | addManualCostEntry | admin | N | ✓ requireAdmin |
+| finances.ts | deleteManualCostEntry | admin | N | ✓ requireAdmin |
+| finances.ts | updateEurRate | admin | N | ✓ requireAdmin |
+| messages.ts | matchUnmatchedMessage | admin | N | ✓ requireAdmin |
+| messages.ts | bulkMatchUnmatchedMessages | admin | N | ✓ requireAdmin |
+| experience-pages.ts | createExperiencePage | admin | N | ✓ requireAdmin |
+| experience-pages.ts | publishAllDrafts | admin | N | ✓ requireAdmin |
+| experience-pages.ts | updateExperiencePage | admin | N | ✓ requireAdmin |
+| experience-pages.ts | createExperiencePageOption | admin | N | ✓ requireAdmin |
+| experience-pages.ts | updateExperiencePageOption | admin | N | ✓ requireAdmin |
+| experience-pages.ts | deleteExperiencePageOption | admin | N | ✓ requireAdmin |
+| reviews.ts | generateReviewLink | admin | N | ✓ requireAdmin |
+| reviews.ts | submitReview | token | N (inline) | ✓ requireToken('review') |
+| reviews.ts | getReviewByToken | public | — | unchanged |
+| ai.ts | setAgentStatus | admin | N | ✓ requireAdmin |
+| ai.ts | extractTripDetailsAI | admin | N | ✓ requireAdmin |
+| offer-photos.ts | uploadOfferPhoto | admin | N | ✓ requireAdmin |
+| review-media.ts | getReviewUploadUrl | token | N (inline) | ✓ requireToken('review') |
+| guide-photos.ts | getGuidePhotos | admin | N | ✓ requireAdmin |
+| guide-photos.ts | saveGuidePhotos | guide | N (inline) | ✓ requireGuide |
+| guide-photos.ts | migrateGuidePhotosToFolder | admin | N | ✓ requireAdmin |
+| submissions.ts | createGuideSubmission | guide | N (inline) | ✓ requireGuide |
+| submissions.ts | markSubmissionInProgress | admin | N | ✓ requireAdmin |
+| availability.ts | setOpenSeason | guide | N (inline) | ✓ requireGuide |
+| availability.ts | setAvailability | guide | N (inline) | ✓ requireGuide |
+| dashboard.ts | createGuideProfile | guide* | — | exception (no guides row yet) |
+| dashboard.ts | acceptGuideTerms | guide | N (inline, in try) | ✓ requireGuide |
+| dashboard.ts | updateGuideProfile | guide | N (inline, in try) | ✓ requireGuide |
+| auth.ts | signUp | public (role-clamped) | N (role unclamped) | ✓ safeRole clamp |
+| auth.ts | signIn | public | — | unchanged |
+| auth.ts | signOut | public | — | unchanged |
+| auth.ts | updatePassword | public | — | unchanged |
+| auth.ts | deleteAccount | self | — | unchanged (exception) |
+| auth.ts | resetPassword | public | — | unchanged (exception) |
+| stripe-connect.ts | setupPayoutAccount | guide | — | poza zakresem, FA-1.07 |
+| stripe-connect.ts | startStripeOnboarding | guide | — | poza zakresem, FA-1.07 |
+| stripe-connect.ts | syncStripeAccountStatus | guide | — | poza zakresem, FA-1.07 |
 
