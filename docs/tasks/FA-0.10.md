@@ -2,7 +2,7 @@
 id: FA-0.10
 title: Google Ads sync — martwy/zły token (cron 500 mimo naprawionego routingu)
 stage: 0
-status: in_progress
+status: review
 difficulty: S
 model: sonnet
 model_approved:
@@ -81,3 +81,138 @@ pnpm typecheck && pnpm lint && pnpm build
 ```
 
 ## Notatki z realizacji
+
+## Report — FA-0.10 Google Ads sync: martwy/zły token
+
+### Done
+
+- **Ekstrakcja warstwy danych** — `src/lib/ads/campaigns.ts` (nowy plik): `listActiveCampaignDefs()` i
+  `upsertAdCampaignRows(rows)` z czystym `createServiceClient()`, bez guarda, bez `revalidatePath`.
+  Evidence: plik istnieje, żadna z tych funkcji nie importuje `requireAdmin` ani `revalidatePath`.
+
+- **`src/actions/ads.ts` deleguje do libu, zachowuje guardy** — wszystkie 7 `export async function`
+  mają `await requireAdmin()` jako pierwsze `await`. Evidence:
+  ```
+  grep -n 'export async function\|await requireAdmin' src/actions/ads.ts
+  33:export async function addAdCampaign(
+  36:  await requireAdmin()
+  44:export async function upsertAdCampaignRows(
+  47:  await requireAdmin()
+  53:export async function getAdCampaignRows(
+  58:  await requireAdmin()
+  71:export async function getCampaignDefs(): Promise<CampaignDefRow[]> {
+  72:  await requireAdmin()
+  76:export async function addCampaignDef(
+  81:  await requireAdmin()
+  99:export async function deleteAdCampaignRow(
+  102:  await requireAdmin()
+  110:export async function deleteCampaignDef(
+  113:  await requireAdmin()
+  ```
+
+- **Cron route importuje z `@/lib/ads/campaigns`, nie z `@/actions/ads`** — `listActiveCampaignDefs`
+  i `upsertAdCampaignRows` wywołane bezpośrednio z lib, bez guarda. Evidence: pierwsze 10 linii
+  `src/app/api/cron/sync-google-ads/route.ts`:
+  ```typescript
+  import { listActiveCampaignDefs, upsertAdCampaignRows, type AdCampaignInsert } from '@/lib/ads/campaigns'
+  ```
+
+- **Pobranie defów wewnątrz try/catch** — `listActiveCampaignDefs()` na linii 27 jest w tym samym
+  bloku try co reszta; poprzednio `getCampaignDefs()` na linii 24 było poza try (unhandled throw
+  przy braku sesji → niejawny 500 bez JSON). Evidence: `src/app/api/cron/sync-google-ads/route.ts:26-27`.
+
+- **Surowe logowanie błędu w `fetch-campaigns.ts`** — try/catch wokół `customer.query(...)` loguje
+  `JSON.stringify(err, Object.getOwnPropertyNames(err))` + `err.errors`, `err.code`, `err.details`,
+  `err.request_id`. Evidence: `src/lib/google-ads/fetch-campaigns.ts:23-53`.
+
+- **Surowy kod błędu Google znaleziony** — uruchomiono skrypt diagnostyczny CJS (`scripts/diag-google-ads.cjs`,
+  usunięty po użyciu), który monkey-patchuje `Service.prototype.getGoogleAdsError` przed wywołaniem,
+  żeby przechwycić częściowo zdekodowany `google.rpc.ErrorInfo` zanim biblioteka crashuje.
+  Surowy output konsoli:
+  ```
+  [diag] raw gRPC error intercepted:
+    all property names: errors, @type, reason, domain, metadata, ...
+    .errors: [object]
+    .@type: type.googleapis.com/google.rpc.ErrorInfo
+    .reason: SERVICE_DISABLED
+    .domain: googleapis.com
+    .metadata: [object]
+    metadata.service: googleads.googleapis.com
+    metadata.activation_url: https://console.developers.google.com/apis/api/googleads.googleapis.com/overview?project=130271810871
+    metadata.consumer: projects/130271810871
+    metadata.service_title: Google Ads API
+    metadata.container_info: 130271810871
+  ```
+  **Kod błędu Google: `SERVICE_DISABLED` na `googleads.googleapis.com` dla GCP project `130271810871`.**
+  To NIE jest wygasły refresh token ani `UNAUTHENTICATED` — token jest żywy, ale Google Ads API
+  nie jest włączone w tym projekcie GCP. Porównanie z FA-0.03: tamten wynik dotyczył stanu
+  PRZED FA-0.06 (cron umierał na `requireAdmin()` poza try i nigdy nie docierał do Google);
+  po ekstrakcji (to zadanie) cron dociera do Google i dostaje `SERVICE_DISABLED`.
+
+- **`pnpm typecheck`** — exit 0, brak błędów.
+  ```
+  > fjordanglers@0.1.0 typecheck
+  > tsc --noEmit
+  (brak output = 0 błędów)
+  ```
+
+- **`pnpm build`** — ✓ Compiled successfully in 24.4s, wszystkie 46 stron wygenerowane.
+
+- **`pnpm lint` (zmienione pliki)** — `eslint src/lib/ads/campaigns.ts src/actions/ads.ts
+  src/app/api/cron/sync-google-ads/route.ts src/lib/google-ads/fetch-campaigns.ts` — exit 0,
+  brak output. Globalne `pnpm lint` ma 40 błędów w niezmienionych plikach (`src/emails/*`,
+  `whatsapp-bridge/poll-emails.mjs`) — pre-existing, udokumentowane w `docs/deferred-tasks.md`
+  wpis FA-1.06.
+
+### Not done
+
+- **Log serwera w PRODUKCJI nie pokazuje `SERVICE_DISABLED` wprost** — z powodu bugu w
+  `google-ads-api@24.1.0` (`service.js:112`: `internalRepr` → `_internal_repr` w nowszym grpc-js),
+  `getGoogleAdsError` crasha zanim częściowo zdekodowany `ErrorInfo` dotrze do naszego try/catch
+  w `fetch-campaigns.ts`. W logu produkcyjnym nadal widać `TypeError: Cannot read properties of
+  undefined (reading 'get')`. Kod `SERVICE_DISABLED` uzyskano przez monkey-patch w skrypcie
+  diagnostycznym — nie jest widoczny w standardowym logowaniu. Odnotowane w deferred-tasks.md.
+
+### Noticed, not touched (→ docs/deferred-tasks.md)
+
+- `google-ads-api@24.1.0` bug: `internalRepr` vs `_internal_repr` w grpc-js —
+  `src/lib/google-ads/client.ts`, `node_modules/google-ads-api/build/src/service.js:112` —
+  upgrade lub patch pozwoli zobaczyć `SERVICE_DISABLED` wprost w logach serwera.
+
+### Needs a decision — STOP
+
+**tj: Google Ads API musi zostać włączone w GCP project 130271810871.**
+
+Link aktywacyjny z odpowiedzi Google:
+`https://console.developers.google.com/apis/api/googleads.googleapis.com/overview?project=130271810871`
+
+Refresh token jest żywy (brak `UNAUTHENTICATED`). Problem: samo API jest wyłączone w tym projekcie GCP.
+Agent tego nie naprawia — wymaga zalogowania w Google Cloud Console przez tj.
+
+Po włączeniu API uruchom ponownie cron i sprawdź, czy pojawi się nowy błąd (np. `DEVELOPER_TOKEN_NOT_APPROVED`
+dla kont testowych) czy kampanie zostaną pobrane poprawnie.
+
+### Verification
+
+```
+# typecheck
+pnpm typecheck
+# → brak output (exit 0)
+
+# lint na zmienionych plikach
+pnpm exec eslint src/lib/ads/campaigns.ts src/actions/ads.ts \
+  src/app/api/cron/sync-google-ads/route.ts src/lib/google-ads/fetch-campaigns.ts
+# → brak output (exit 0)
+
+# build
+pnpm build
+# → ✓ Compiled successfully in 24.4s
+# → ✓ Generating static pages (46/46)
+
+# guard check — każda eksportowana funkcja w ads.ts ma requireAdmin
+grep -n 'export async function\|await requireAdmin' src/actions/ads.ts
+# → 7 par (patrz sekcja Done)
+
+# surowy błąd Google (diagnostyka)
+# node scripts/diag-google-ads.cjs → SERVICE_DISABLED (skrypt usunięty po użyciu)
+```

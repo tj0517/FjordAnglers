@@ -3,8 +3,18 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth/guards'
+import {
+  listActiveCampaignDefs,
+  upsertAdCampaignRows as libUpsertAdCampaignRows,
+  type AdCampaignInsert,
+  type CampaignDefRow,
+} from '@/lib/ads/campaigns'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// AdCampaignInsert and CampaignDefRow canonical definitions live in
+// @/lib/ads/campaigns and are re-exported here for backwards-compatible imports.
+export type { AdCampaignInsert, CampaignDefRow }
 
 export interface AdCampaignRow {
   id: string
@@ -16,27 +26,6 @@ export interface AdCampaignRow {
   impressions: number
   clicks: number
   avg_cpc: number
-}
-
-export interface AdCampaignInsert {
-  date: string
-  platform: string
-  campaign_name: string
-  spend: number
-  impressions: number
-  clicks: number
-  avg_cpc: number
-}
-
-export interface CampaignDefRow {
-  id: string
-  created_at: string
-  key: string
-  name: string
-  platform: 'google_ads' | 'meta'
-  sort_order: number
-  active: boolean
-  google_campaign_id?: string | null
 }
 
 // ─── Ad Campaign Actions ──────────────────────────────────────────────────────
@@ -56,13 +45,9 @@ export async function upsertAdCampaignRows(
   rows: AdCampaignInsert[],
 ): Promise<{ success: boolean; error?: string }> {
   await requireAdmin()
-  if (rows.length === 0) return { success: true }
-  const supabase = createServiceClient()
-  const { error } = await supabase.from('ad_campaigns')
-    .upsert(rows, { onConflict: 'date,campaign_name' })
-  if (error) return { success: false, error: error.message }
-  revalidatePath('/admin/ads')
-  return { success: true }
+  const result = await libUpsertAdCampaignRows(rows)
+  if (result.success) revalidatePath('/admin/ads')
+  return result
 }
 
 export async function getAdCampaignRows(
@@ -72,7 +57,8 @@ export async function getAdCampaignRows(
 ): Promise<AdCampaignRow[]> {
   await requireAdmin()
   const supabase = createServiceClient()
-  const { data } = await supabase.from('ad_campaigns')
+  const { data } = await supabase
+    .from('ad_campaigns')
     .select('*')
     .eq('campaign_name', campaignName)
     .gte('date', dateFrom)
@@ -84,12 +70,7 @@ export async function getAdCampaignRows(
 
 export async function getCampaignDefs(): Promise<CampaignDefRow[]> {
   await requireAdmin()
-  const supabase = createServiceClient()
-  const { data } = await supabase.from('ad_campaign_defs')
-    .select('id, created_at, key, name, platform, sort_order, active, google_campaign_id')
-    .eq('active', true)
-    .order('sort_order', { ascending: true })
-  return (data ?? []) as CampaignDefRow[]
+  return listActiveCampaignDefs()
 }
 
 export async function addCampaignDef(data: {
@@ -99,12 +80,14 @@ export async function addCampaignDef(data: {
 }): Promise<{ success: boolean; error?: string; row?: CampaignDefRow }> {
   await requireAdmin()
   const supabase = createServiceClient()
-  const { data: existing } = await supabase.from('ad_campaign_defs')
+  const { data: existing } = await supabase
+    .from('ad_campaign_defs')
     .select('sort_order')
     .order('sort_order', { ascending: false })
     .limit(1)
   const maxOrder = ((existing as { sort_order: number }[] | null)?.[0]?.sort_order ?? 0)
-  const { data: row, error } = await supabase.from('ad_campaign_defs')
+  const { data: row, error } = await supabase
+    .from('ad_campaign_defs')
     .insert({ ...data, sort_order: maxOrder + 1 })
     .select()
     .single()
@@ -129,7 +112,8 @@ export async function deleteCampaignDef(
 ): Promise<{ success: boolean; error?: string }> {
   await requireAdmin()
   const supabase = createServiceClient()
-  const { error } = await supabase.from('ad_campaign_defs')
+  const { error } = await supabase
+    .from('ad_campaign_defs')
     .update({ active: false })
     .eq('id', id)
   if (error) return { success: false, error: error.message }
