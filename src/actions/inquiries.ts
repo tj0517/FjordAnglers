@@ -1201,6 +1201,17 @@ export async function saveGuideOfferEta(
 
   const svc = createServiceClient()
 
+  // Verify ownership — like saveGuideOfferResponse; prevents silent "0 rows updated"
+  // when the inquiry is assigned to a different guide.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: owned } = await (svc as any)
+    .from('inquiries')
+    .select('id')
+    .eq('id', inquiryId)
+    .eq('assigned_guide_id', guide.id)
+    .single()
+  if (owned == null) throw new UnauthorizedError('Inquiry not found or not assigned to you')
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (svc as any)
     .from('inquiries')

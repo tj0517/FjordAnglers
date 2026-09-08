@@ -149,9 +149,8 @@ export async function acceptGuideTerms({
 }: {
   marketingConsent: boolean
 }): Promise<ActionResult> {
+  const { userId } = await requireGuide()
   try {
-    const { userId } = await requireGuide()
-
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -186,9 +185,8 @@ export async function acceptGuideTerms({
 export async function updateGuideProfile(
   data: UpdateGuideProfileData,
 ): Promise<ActionResult> {
+  const { userId } = await requireGuide()
   try {
-    const { userId } = await requireGuide()
-
     const supabase = await createClient()
 
     // Validate constrained new fields

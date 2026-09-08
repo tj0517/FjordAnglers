@@ -299,3 +299,193 @@ describe('guide-photos.ts', () => {
     })
   })
 })
+
+// ─── ads.ts ───────────────────────────────────────────────────────────────────
+
+describe('ads.ts', () => {
+  describe('addAdCampaign', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { addAdCampaign } = await import('@/actions/ads')
+      await expect(
+        addAdCampaign({
+          date: '2026-01-01',
+          platform: 'google',
+          campaign_name: 'test',
+          spend: 100,
+          impressions: 1000,
+          clicks: 10,
+          avg_cpc: 10,
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── ai.ts ────────────────────────────────────────────────────────────────────
+
+describe('ai.ts', () => {
+  describe('setAgentStatus', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { setAgentStatus } = await import('@/actions/ai')
+      await expect(setAgentStatus('inq-1', 'stopped')).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── availability.ts ──────────────────────────────────────────────────────────
+
+describe('availability.ts', () => {
+  describe('setOpenSeason', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { setOpenSeason } = await import('@/actions/availability')
+      await expect(setOpenSeason('2026-06-01', '2026-09-30')).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── dashboard.ts ─────────────────────────────────────────────────────────────
+
+describe('dashboard.ts', () => {
+  describe('updateGuideProfile', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { updateGuideProfile } = await import('@/actions/dashboard')
+      await expect(updateGuideProfile({} as Parameters<typeof updateGuideProfile>[0])).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── experience-pages.ts ──────────────────────────────────────────────────────
+
+describe('experience-pages.ts', () => {
+  describe('createExperiencePage', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { createExperiencePage } = await import('@/actions/experience-pages')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await expect(createExperiencePage({} as any)).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── finances.ts ──────────────────────────────────────────────────────────────
+
+describe('finances.ts', () => {
+  describe('addFixedCost', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { addFixedCost } = await import('@/actions/finances')
+      await expect(
+        addFixedCost({ name: 'test', amount_pln: 100, billing_cycle: 'monthly', category: 'other' }),
+      ).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── guide-forms.ts ───────────────────────────────────────────────────────────
+
+describe('guide-forms.ts', () => {
+  describe('createIntakeForm', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { createIntakeForm } = await import('@/actions/guide-forms')
+      await expect(createIntakeForm('Test Form', null, [])).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── messages.ts ──────────────────────────────────────────────────────────────
+
+describe('messages.ts', () => {
+  describe('matchUnmatchedMessage', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { matchUnmatchedMessage } = await import('@/actions/messages')
+      await expect(matchUnmatchedMessage('msg-1', 'inq-1')).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── offer-photos.ts ──────────────────────────────────────────────────────────
+
+describe('offer-photos.ts', () => {
+  describe('uploadOfferPhoto', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { uploadOfferPhoto } = await import('@/actions/offer-photos')
+      await expect(uploadOfferPhoto(new FormData())).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── review-media.ts ──────────────────────────────────────────────────────────
+
+describe('review-media.ts', () => {
+  describe('getReviewUploadUrl — expired token', () => {
+    it('throws UnauthorizedError when the review token has expired', async () => {
+      mockExpiredReviewToken()
+      const { getReviewUploadUrl } = await import('@/actions/review-media')
+      await expect(
+        getReviewUploadUrl('expired-token', 'photo.jpg', 'image/jpeg'),
+      ).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── submissions.ts ───────────────────────────────────────────────────────────
+
+describe('submissions.ts', () => {
+  describe('markSubmissionInProgress', () => {
+    it('throws UnauthorizedError when there is no session', async () => {
+      mockNoSession()
+      const { markSubmissionInProgress } = await import('@/actions/submissions')
+      await expect(markSubmissionInProgress('sub-1')).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+  })
+})
+
+// ─── auth.ts — role elevation prevention ──────────────────────────────────────
+
+describe('auth.ts', () => {
+  describe('signUp — role clamping', () => {
+    it('clamps role to angler when an elevated role is passed', async () => {
+      let capturedRole: string | undefined
+
+      vi.mocked(createServiceClient).mockReturnValue({
+        auth: {
+          admin: {
+            createUser: async () => ({ data: { user: { id: 'u-new' } }, error: null }),
+          },
+        },
+        from: (table: string) => {
+          if (table === 'profiles') {
+            return {
+              upsert: (data: Record<string, unknown>) => {
+                capturedRole = data.role as string
+                return { error: null }
+              },
+            }
+          }
+          return { upsert: async () => ({ error: null }) }
+        },
+      } as unknown as ReturnType<typeof createServiceClient>)
+
+      vi.mocked(createClient).mockResolvedValue({
+        auth: {
+          signInWithPassword: async () => ({ error: null }),
+          getUser: async () => ({ data: { user: null }, error: null }),
+        },
+      } as unknown as Awaited<ReturnType<typeof createClient>>)
+
+      const { signUp } = await import('@/actions/auth')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await signUp('Test User', 'test@example.com', 'password123', 'admin' as any)
+
+      expect(capturedRole).not.toBe('admin')
+      expect(capturedRole).toBe('angler')
+    })
+  })
+})

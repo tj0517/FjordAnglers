@@ -54,6 +54,11 @@ export async function signUp(
   role: 'angler' | 'guide' = 'angler',
 ): Promise<AuthResult> {
   try {
+    // Runtime defence: server actions are publicly addressable — a crafted
+    // request could pass role:'admin'. Clamp to the only two values the
+    // registration UI is allowed to set.
+    const safeRole: 'angler' | 'guide' = role === 'guide' ? 'guide' : 'angler'
+
     const service = createServiceClient()
 
     // Create user directly — email_confirm: true skips the verification email
@@ -62,7 +67,7 @@ export async function signUp(
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: fullName, role },
+      user_metadata: { full_name: fullName, role: safeRole },
     })
 
     if (createError != null) {
@@ -79,7 +84,7 @@ export async function signUp(
     if (data.user != null) {
       await service
         .from('profiles')
-        .upsert({ id: data.user.id, role }, { onConflict: 'id' })
+        .upsert({ id: data.user.id, role: safeRole }, { onConflict: 'id' })
     }
 
     // Sign in immediately so the user lands on their dashboard.
