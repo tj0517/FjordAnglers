@@ -2,7 +2,7 @@
 id: FA-0.10
 title: Google Ads sync — martwy/zły token (cron 500 mimo naprawionego routingu)
 stage: 0
-status: review
+status: done
 difficulty: S
 model: sonnet
 model_approved:
