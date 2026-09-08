@@ -2,7 +2,7 @@
 id: FA-0.15
 title: Własna telemetria lejka bez cookies — `web_events` (page_view / form_open / form_submit per strona)
 stage: 0
-status: todo
+status: in_progress
 difficulty: M
 model: sonnet
 model_approved:
