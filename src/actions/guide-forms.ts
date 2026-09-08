@@ -1,7 +1,8 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,23 +49,6 @@ export interface GuideIntakeResponse {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const any = (client: ReturnType<typeof createServiceClient>) => client as any
 
-// ─── Auth helper ──────────────────────────────────────────────────────────────
-
-async function requireAdmin(): Promise<ReturnType<typeof createServiceClient>> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user == null) throw new Error('Not authenticated')
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'admin') throw new Error('Not authorized')
-  return createServiceClient()
-}
-
 // ─── createIntakeForm ─────────────────────────────────────────────────────────
 
 export async function createIntakeForm(
@@ -72,9 +56,9 @@ export async function createIntakeForm(
   description: string | null,
   questions: FormQuestion[],
 ): Promise<{ id: string } | { error: string }> {
-  let svc: ReturnType<typeof createServiceClient>
-  try { svc = await requireAdmin() } catch { return { error: 'Not authorized' } }
+  await requireAdmin()
 
+  const svc = createServiceClient()
   const token = crypto.randomUUID().replace(/-/g, '')
 
   const { data, error } = await any(svc)
@@ -103,9 +87,9 @@ export async function updateIntakeForm(
   id: string,
   updates: Partial<Pick<GuideIntakeForm, 'title' | 'description' | 'questions' | 'is_active'>>,
 ): Promise<void | { error: string }> {
-  let svc: ReturnType<typeof createServiceClient>
-  try { svc = await requireAdmin() } catch { return { error: 'Not authorized' } }
+  await requireAdmin()
 
+  const svc = createServiceClient()
   const { error } = await any(svc)
     .from('guide_intake_forms')
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -125,9 +109,9 @@ export async function updateIntakeForm(
 export async function deleteIntakeForm(
   id: string,
 ): Promise<void | { error: string }> {
-  let svc: ReturnType<typeof createServiceClient>
-  try { svc = await requireAdmin() } catch { return { error: 'Not authorized' } }
+  await requireAdmin()
 
+  const svc = createServiceClient()
   const { error } = await any(svc)
     .from('guide_intake_forms')
     .delete()
@@ -144,6 +128,8 @@ export async function deleteIntakeForm(
 // ─── getForms ─────────────────────────────────────────────────────────────────
 
 export async function getForms(): Promise<GuideIntakeForm[]> {
+  await requireAdmin()
+
   const svc = createServiceClient()
 
   const { data: forms } = await any(svc)
@@ -177,6 +163,8 @@ export async function getFormById(id: string): Promise<{
   form: GuideIntakeForm
   responses: GuideIntakeResponse[]
 } | null> {
+  await requireAdmin()
+
   const svc = createServiceClient()
 
   const [

@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 import type { CancellationPolicy, BoatType } from '@/types'
 import { CACHE_TAG_GUIDES, CACHE_TAG_EXPERIENCES } from '@/lib/supabase/queries'
+import { requireGuide } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,9 @@ const updateGuideProfileSchema = z.object({
 /**
  * Called from the onboarding wizard on first login.
  * Creates the guides row linked to the auth user.
+ *
+ * No requireGuide() here — this is called during first-time guide setup
+ * before the guides row exists.
  */
 export async function createGuideProfile(
   data: CreateGuideProfileData,
@@ -146,12 +150,9 @@ export async function acceptGuideTerms({
   marketingConsent: boolean
 }): Promise<ActionResult> {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { userId } = await requireGuide()
 
-    if (user == null) {
-      return { success: false, error: 'Not authenticated.', code: 'UNAUTHORIZED' }
-    }
+    const supabase = await createClient()
 
     const { error } = await supabase
       .from('guides')
@@ -159,7 +160,7 @@ export async function acceptGuideTerms({
         terms_accepted_at:      new Date().toISOString(),
         photo_marketing_consent: marketingConsent,
       })
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
 
     if (error != null) {
       console.error('[acceptGuideTerms]', error.message)
@@ -186,12 +187,9 @@ export async function updateGuideProfile(
   data: UpdateGuideProfileData,
 ): Promise<ActionResult> {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { userId } = await requireGuide()
 
-    if (user == null) {
-      return { success: false, error: 'Not authenticated.', code: 'UNAUTHORIZED' }
-    }
+    const supabase = await createClient()
 
     // Validate constrained new fields
     const validation = updateGuideProfileSchema.safeParse({
@@ -241,7 +239,7 @@ export async function updateGuideProfile(
     const { error } = await supabase
       .from('guides')
       .update(update)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
 
     if (error != null) {
       console.error('[updateGuideProfile]', error.message)

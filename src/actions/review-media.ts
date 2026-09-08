@@ -1,7 +1,5 @@
 'use server'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 /**
  * getReviewUploadUrl
  *
@@ -13,32 +11,25 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { requireToken } from '@/lib/auth/guards'
 
 const BUCKET = 'review-media'
 
 export async function getReviewUploadUrl(
   token: string,
   filename: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   contentType: string,
 ): Promise<{ signedUrl: string; publicUrl: string; path: string } | { error: string }> {
+  const { id: reviewId } = await requireToken('review', token)
+
   const svc = createServiceClient()
-
-  // Validate the review token
-  const { data: review } = await svc
-    .from('reviews')
-    .select('id, token_expires_at')
-    .eq('token', token)
-    .maybeSingle()
-
-  if (review == null) return { error: 'Invalid review link.' }
-  if (new Date(review.token_expires_at) < new Date()) return { error: 'Review link has expired.' }
 
   // Build a unique path inside the review's own folder
   const ext = filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : 'bin'
-  const path = `${review.id as string}/${crypto.randomUUID()}.${ext}`
+  const path = `${reviewId}/${crypto.randomUUID()}.${ext}`
 
-  const typedSvc = createServiceClient()
-  const { data, error } = await typedSvc.storage
+  const { data, error } = await svc.storage
     .from(BUCKET)
     .createSignedUploadUrl(path)
 
@@ -47,7 +38,7 @@ export async function getReviewUploadUrl(
     return { error: 'Could not prepare upload. Please try again.' }
   }
 
-  const { data: { publicUrl } } = typedSvc.storage
+  const { data: { publicUrl } } = svc.storage
     .from(BUCKET)
     .getPublicUrl(path)
 

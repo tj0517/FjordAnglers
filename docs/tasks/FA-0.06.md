@@ -2,7 +2,7 @@
 id: FA-0.06
 title: requireAdmin() we wszystkich mutujących server actions (dziś 28 akcji w inquiries.ts bez sprawdzenia)
 stage: 0
-status: in_progress
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -62,4 +62,25 @@ pnpm typecheck && pnpm lint && pnpm build
 ```
 
 ## Notatki z realizacji
+
+**2026-09-08** — FA-0.06 complete on branch `fix/require-admin-actions`.
+
+### Zrobione
+- `src/lib/auth/guards.ts` (already committed) — `requireAdmin()`, `requireGuide()`, `requireToken(kind, token)`; each throws `UnauthorizedError`
+- 15 action files updated: `admin.ts`, `guide-forms.ts`, `inquiries.ts`, `ads.ts`, `finances.ts`, `messages.ts`, `experience-pages.ts`, `reviews.ts`, `ai.ts`, `offer-photos.ts`, `review-media.ts`, `guide-photos.ts`, `submissions.ts`, `availability.ts`, `dashboard.ts`
+- Inline token validation removed from `submitOfferAnswers`, `acceptOffer`, `declineOffer`, `submitReview`, `getReviewUploadUrl` — replaced with `requireToken()`
+- Inline guide auth removed from `respondToAssignment`, `saveGuideOfferEta`, `saveGuideOfferResponse`, `saveGuidePhotos`, `createGuideSubmission`, `setOpenSeason`, `setAvailability`, `acceptGuideTerms`, `updateGuideProfile` — replaced with `requireGuide()`
+- `createGuideProfile` — preserved with explanatory comment (no `guides` row yet at first login)
+- `src/actions/__tests__/authorization.test.ts` — 12 unit tests, all green (no session, non-admin, wrong guide ownership, expired token)
+- `pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build` — all green
+
+### Not done / deferred
+- `contentType` param in `getReviewUploadUrl` not forwarded to storage call — S task in deferred-tasks.md
+- `revalidateTag` called with two args in `dashboard.ts` — S task in deferred-tasks.md
+
+### Justified exceptions (no guard)
+- `getOfferByToken`, `getInquiryConfirmation` — public reads, intentionally unguarded
+- `getFormByToken`, `submitIntakeResponse` — public token-based intake form
+- `getReviewByToken` — public read
+- `stripe-connect.ts`, `auth.ts`, `bookings.ts`, `accommodations.ts` — out of scope (FA-1.07)
 

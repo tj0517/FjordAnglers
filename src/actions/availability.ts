@@ -1,7 +1,8 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { requireGuide } from '@/lib/auth/guards'
+import { createServiceClient } from '@/lib/supabase/server'
 
 type ActionResult = { success: true } | { success: false; error: string }
 
@@ -27,13 +28,9 @@ function addDays(iso: string, n: number): string {
  * Replaces all existing blocks from today forward.
  */
 export async function setOpenSeason(from: string, to: string): Promise<ActionResult> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
-  const { data: guide } = await supabase
-    .from('guides').select('id').eq('user_id', user.id).single()
-  if (guide == null) return { success: false, error: 'Guide not found' }
+  const svc = createServiceClient()
 
   const today = new Date().toISOString().slice(0, 10)
   const twoYearsOut = new Date()
@@ -41,7 +38,7 @@ export async function setOpenSeason(from: string, to: string): Promise<ActionRes
   const maxDate = twoYearsOut.toISOString().slice(0, 10)
 
   // Delete all existing blocks from today forward
-  const { error: delError } = await supabase
+  const { error: delError } = await svc
     .from('guide_unavailable_dates')
     .delete()
     .eq('guide_id', guide.id)
@@ -54,7 +51,7 @@ export async function setOpenSeason(from: string, to: string): Promise<ActionRes
   if (to < maxDate)  toBlock.push(...genDatesInRange(addDays(to, 1), maxDate))
 
   if (toBlock.length > 0) {
-    const { error: insError } = await supabase
+    const { error: insError } = await svc
       .from('guide_unavailable_dates')
       .upsert(
         toBlock.map(d => ({ guide_id: guide.id, date: d })),
@@ -78,20 +75,12 @@ export async function setAvailability(
 ): Promise<ActionResult> {
   if (dates.length === 0) return { success: true }
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
-  const { data: guide } = await supabase
-    .from('guides')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (guide == null) return { success: false, error: 'Guide not found' }
+  const svc = createServiceClient()
 
   if (blocked) {
-    const { error } = await supabase
+    const { error } = await svc
       .from('guide_unavailable_dates')
       .upsert(
         dates.map(d => ({ guide_id: guide.id, date: d })),
@@ -99,7 +88,7 @@ export async function setAvailability(
       )
     if (error != null) return { success: false, error: error.message }
   } else {
-    const { error } = await supabase
+    const { error } = await svc
       .from('guide_unavailable_dates')
       .delete()
       .eq('guide_id', guide.id)

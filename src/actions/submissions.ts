@@ -7,8 +7,8 @@
  * markSubmissionInProgress — FA marks a submission as in_progress when starting to build.
  */
 
-import { redirect } from 'next/navigation'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin, requireGuide } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,17 +36,7 @@ export type SubmissionResult =
 export async function createGuideSubmission(
   payload: SubmissionPayload,
 ): Promise<SubmissionResult> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
-
-  const { data: guide } = await supabase
-    .from('guides')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (guide == null) return { success: false, error: 'Guide profile not found' }
+  const { guide } = await requireGuide()
 
   // Validate required fields server-side
   if (!payload.location_name.trim()) return { success: false, error: 'Location name is required' }
@@ -95,6 +85,7 @@ export async function createGuideSubmission(
 export async function markSubmissionInProgress(
   submissionId: string,
 ): Promise<{ guideId: string } | { error: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   const { data: sub } = await svc

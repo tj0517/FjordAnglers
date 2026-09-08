@@ -18,8 +18,9 @@
  * files to the {guide_id}/ prefix and updates all DB references.
  */
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import type { GalleryImage } from '@/components/admin/multi-image-upload'
+import { requireAdmin, requireGuide } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ export type GuidePhotoRow = {
  * Safe to call from admin pages with a service client.
  */
 export async function getGuidePhotos(guideId: string): Promise<GuidePhotoRow[]> {
+  await requireAdmin()
   const svc = createServiceClient()
   const { data } = await svc
     .from('guide_photos')
@@ -61,22 +63,9 @@ export async function getGuidePhotos(guideId: string): Promise<GuidePhotoRow[]> 
 export async function saveGuidePhotos(
   photos: GalleryImage[],
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (user == null) return { success: false, error: 'Not authenticated' }
+  const { guide } = await requireGuide()
 
   const svc = createServiceClient()
-
-  // Verify the caller is the guide who owns this profile
-  const { data: guide } = await svc
-    .from('guides')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (guide == null) return { success: false, error: 'Guide profile not found' }
 
   // Full replace — delete then insert
   const { error: delErr } = await svc
@@ -121,6 +110,7 @@ export async function migrateGuidePhotosToFolder(guideId: string): Promise<{
   skipped:  number
   errors:   number
 }> {
+  await requireAdmin()
   const svc    = createServiceClient()
   const BUCKET = 'guide-photos'
 

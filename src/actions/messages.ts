@@ -10,6 +10,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ActionResult } from '@/actions/inquiries'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── matchUnmatchedMessage ────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export async function matchUnmatchedMessage(
   unmatchedId: string,
   inquiryId: string,
 ): Promise<ActionResult> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // 1. Fetch the unmatched message
@@ -86,6 +88,7 @@ export async function bulkMatchUnmatchedMessages(
   unmatchedIds: string[],
   inquiryId: string,
 ): Promise<ActionResult> {
+  await requireAdmin()
   if (unmatchedIds.length === 0) return { success: true }
 
   const svc = createServiceClient()

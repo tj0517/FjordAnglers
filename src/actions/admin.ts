@@ -10,43 +10,16 @@
  *   - status = 'active' + verified_at = NOW() (publicly visible immediately)
  */
 
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { stripe } from '@/lib/stripe/client'
+import { requireAdmin } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AdminActionResult =
   | { error: string }
   | { success: true; guideId: string }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Verify the current user is authenticated and has role='admin'.
- * Returns the user id on success, throws/redirects on failure.
- */
-async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (user == null) {
-    redirect('/login?next=/admin')
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'admin') {
-    redirect('/')
-  }
-
-  return { supabase, userId: user.id }
-}
 
 // ─── Create Beta Guide Listing ────────────────────────────────────────────────
 
@@ -84,8 +57,9 @@ export type BetaGuidePayload = {
 export async function createBetaGuide(
   payload: BetaGuidePayload,
 ): Promise<AdminActionResult> {
+  await requireAdmin()
   try {
-    const { supabase } = await requireAdmin()
+    const supabase = createServiceClient()
 
     const { data, error } = await supabase
       .from('guides')
@@ -132,8 +106,6 @@ export async function createBetaGuide(
 
     return { success: true, guideId: data.id }
   } catch (err) {
-    // redirect() throws — let it bubble up
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/createBetaGuide] Unexpected error:', err)
     return { error: 'An unexpected error occurred. Please try again.' }
   }
@@ -160,8 +132,8 @@ export async function deleteGuide(
   guideId: string,
   opts: { deleteAuthAccount?: boolean } = {},
 ): Promise<AdminDeleteResult> {
+  await requireAdmin()
   try {
-    await requireAdmin()
     const supabase = createServiceClient()
 
     // 1. Fetch the guide's user_id before deletion
@@ -189,7 +161,6 @@ export async function deleteGuide(
 
     return { success: true }
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/deleteGuide] Unexpected error:', err)
     return { error: 'Failed to delete guide. Please try again.' }
   }
@@ -236,8 +207,8 @@ export async function updateGuide(
   guideId: string,
   payload: UpdateGuidePayload,
 ): Promise<AdminUpdateResult> {
+  await requireAdmin()
   try {
-    await requireAdmin()
     const supabase = createServiceClient()
 
     // Fetch current verified_at so we only set it once (on first activation)
@@ -298,7 +269,6 @@ export async function updateGuide(
 
     return { success: true }
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/updateGuide] Unexpected error:', err)
     return { error: 'Failed to update guide. Please try again.' }
   }
@@ -324,8 +294,8 @@ export async function linkGuideAccount(
   guideId: string,
   input?: string,
 ): Promise<AdminDeleteResult> {
+  await requireAdmin()
   try {
-    await requireAdmin()
     const supabase = createServiceClient()
 
     // 1. Fetch guide — must be unlinked
@@ -374,7 +344,6 @@ export async function linkGuideAccount(
 
     return { success: true }
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/linkGuideAccount]', err)
     return { error: 'Failed to link account. Please try again.' }
   }
@@ -390,8 +359,8 @@ export async function adminSetGuideStatus(
   guideId: string,
   status: 'active' | 'suspended' | 'pending',
 ): Promise<AdminDeleteResult> {
+  await requireAdmin()
   try {
-    await requireAdmin()
     const supabase = createServiceClient()
 
     const { data: current } = await supabase
@@ -418,7 +387,6 @@ export async function adminSetGuideStatus(
     revalidatePath('/guides')
     return { success: true }
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/adminSetGuideStatus]', err)
     return { error: 'Failed to update status. Please try again.' }
   }
@@ -433,8 +401,8 @@ export async function adminSetGuideStatus(
 export async function adminSyncStripeStatus(
   guideId: string,
 ): Promise<{ success: true; chargesEnabled: boolean; payoutsEnabled: boolean } | { error: string }> {
+  await requireAdmin()
   try {
-    await requireAdmin()
     const supabase = createServiceClient()
 
     const { data: guide } = await supabase
@@ -465,7 +433,6 @@ export async function adminSyncStripeStatus(
       payoutsEnabled: account.payouts_enabled ?? false,
     }
   } catch (err) {
-    if (err instanceof Error && err.message === 'NEXT_REDIRECT') throw err
     console.error('[admin/adminSyncStripeStatus]', err)
     return { error: 'Failed to sync Stripe status. Please try again.' }
   }

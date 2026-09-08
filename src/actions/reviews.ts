@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { getAppUrl } from '@/lib/app-url'
+import { requireAdmin, requireToken } from '@/lib/auth/guards'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export interface ReviewSubmitInput {
 export async function generateReviewLink(
   inquiryId: string,
 ): Promise<{ url: string; token: string }> {
+  await requireAdmin()
   const svc = createServiceClient()
 
   // Return existing token if already generated
@@ -108,17 +110,18 @@ export async function submitReview(
   token: string,
   input: ReviewSubmitInput,
 ): Promise<{ ok: boolean; error?: string }> {
+  const { id: reviewId } = await requireToken('review', token)
+
   const svc = createServiceClient()
 
   const { data: review } = await svc
     .from('reviews')
-    .select('id, submitted_at, token_expires_at')
-    .eq('token', token)
+    .select('id, submitted_at')
+    .eq('id', reviewId)
     .maybeSingle()
 
   if (review == null) return { ok: false, error: 'Review link not found.' }
   if (review.submitted_at != null) return { ok: false, error: 'Review already submitted.' }
-  if (new Date(review.token_expires_at) < new Date()) return { ok: false, error: 'This review link has expired.' }
 
   const { error } = await svc
     .from('reviews')
@@ -130,7 +133,7 @@ export async function submitReview(
       media_urls:       input.mediaUrls ?? [],
       submitted_at:     new Date().toISOString(),
     })
-    .eq('token', token)
+    .eq('id', reviewId)
 
   if (error) return { ok: false, error: error.message }
 
