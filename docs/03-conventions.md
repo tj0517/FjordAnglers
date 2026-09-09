@@ -38,6 +38,10 @@ justification, it goes in an ADR and this file links to it.
   Since FA-1.01 (baseline `20260904165037_baseline_prod.sql`), production's SQL Editor is
   read-only in practice: every schema change goes through `supabase migration new` +
   `supabase db push`, never a manual statement run against `uwxrstbplaoxfghrchcy`.
+- `apply_migration` via MCP assigns its own timestamp version (not the filename's). After
+  using it, rename the local migration file to match the version from `list_migrations`,
+  in the same PR. Default path to production is `supabase db push` done by tj — agents
+  use `apply_migration` only when explicitly instructed and after a STOP-gate approval.
 - Column naming: `snake_case`, `*_at` for timestamps, `*_cents` for money, `*_id` for FKs,
   booleans as adjectives (`qualified`, `is_hidden` is legacy).
 - Money: `INTEGER` cents + `currency CHAR(3)`. Never `NUMERIC` euros in new columns.
