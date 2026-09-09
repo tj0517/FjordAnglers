@@ -79,7 +79,7 @@ const EventSchema = z
   .object({
     event:        z.enum(['page_view', 'form_open', 'form_submit']),
     path:         z.string().min(1).max(500),
-    country:      z.string().max(3).optional(),
+    country:      z.string().max(40).optional(),
     utm_campaign: z.string().max(200).optional(),
     utm_content:  z.string().max(200).optional(),
   })

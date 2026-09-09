@@ -30,8 +30,9 @@ COMMENT ON TABLE "public"."web_events" IS
   'All anon/authenticated access blocked by RLS default-deny (no policies).';
 
 COMMENT ON COLUMN "public"."web_events"."country" IS
-  'Destination country of the page (e.g. IS, NZ) — '
-  'passed from the server via experience_pages.country, not the visitor''s geolocation.';
+  'Destination country of the page as stored in experience_pages.country — '
+  'full name, e.g. ''Iceland'', ''New Zealand'', ''Norway''. '
+  'Passed from the server, not the visitor''s geolocation.';
 
 COMMENT ON COLUMN "public"."web_events"."utm_campaign" IS
   'utm_campaign from window.location.search at the moment of page_view only. '
@@ -60,3 +61,13 @@ SELECT
   COUNT(*) FILTER (WHERE event = 'form_submit') AS form_submits
 FROM "public"."web_events"
 GROUP BY 1, 2;
+
+-- security_invoker: the view runs with the caller's role and therefore
+-- inherits the RLS default-deny on web_events (anon/authenticated see nothing).
+-- Without this the baseline DEFAULT PRIVILEGES grant on tables leaks through.
+ALTER VIEW "public"."web_funnel_daily" SET (security_invoker = true);
+
+-- Belt-and-suspenders: revoke any table-level privilege that DEFAULT PRIVILEGES
+-- may have already granted for future objects when this migration ran.
+REVOKE ALL ON "public"."web_events"       FROM anon, authenticated;
+REVOKE ALL ON "public"."web_funnel_daily" FROM anon, authenticated;

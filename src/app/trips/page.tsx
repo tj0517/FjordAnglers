@@ -200,7 +200,7 @@ export default async function TripsPage({
 
   return (
     <div style={{ background: '#F3EDE4' }}>
-      <WebEventTracker />
+      <WebEventTracker country={matchedCountry} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListSchema) }} />
 
       <NavWithUser />
