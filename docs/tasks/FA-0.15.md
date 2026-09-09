@@ -127,7 +127,7 @@ Lokalizacja `form_open` i `form_submit` w kodzie:
 
 ### Pliki
 
-- `supabase/migrations/20260908204315_web_events.sql` — tabela + indeks + RLS + view
+- `supabase/migrations/20260909131403_web_events.sql` — tabela + indeks + RLS + view
 - `src/app/api/events/route.ts` — POST handler (Zod strict, rate limit, device, referrer_host)
 - `src/lib/web-events.ts` — `sendWebEvent()`, sendBeacon + fetch keepalive
 - `src/components/analytics/WebEventTracker.tsx` — Client component, `page_view` on mount
