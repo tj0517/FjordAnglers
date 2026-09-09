@@ -138,6 +138,54 @@ Lokalizacja `form_open` i `form_submit` w kodzie:
 - `docs/04-open-questions.md` — O-13 (GclidCapture + localStorage + PT art. 173)
 - `docs/tasks/FA-0.14.md` — notatka o podpięciu `page_view` gdy FA-0.14 zrealizowane
 
+### Test E2E lokalnie (2026-09-09)
+
+Serwer: `pnpm next dev --webpack` z nadpisanymi env vars na lokalny stack Supabase
+(`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54421`, klucze z `supabase status --output env`).
+Przeglądarka: Playwright headless (chromium). Skrypt scratch w `/tmp/pw-test/` (nie w repo).
+
+**Strona**: `/experiences/test-e2e-web-events?utm_campaign=test-a&utm_content=v1&utm_term=x&gclid=y`
+(minimalna strona doświadczenia wstawiona do lokalnej bazy i usunięta po teście).
+
+**Wynik Playwright (sieć):**
+```
+(a) /api/events network requests:
+    [1] POST /api/events -> HTTP 204
+    [2] POST /api/events -> HTTP 204
+    [3] POST /api/events -> HTTP 204
+    [4] POST /api/events -> HTTP 204
+
+(b) /api/inquiries responses:
+    [1] HTTP 201: {"id":"c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040","status":"pending"}
+```
+
+*4 eventy zamiast 3: React 18 StrictMode w trybie dev uruchamia efekty dwukrotnie
+(`useEffect(fn, [])` w `InquiryModal`), stąd dwa `form_open`. W produkcji jeden.*
+
+**SELECT z 3 typami zdarzeń (+ duplikat StrictMode):**
+```
+ id |    event    |               path               | country | utm_campaign | utm_content | device
+----+-------------+----------------------------------+---------+--------------+-------------+---------
+ 12 | page_view   | /experiences/test-e2e-web-events | Iceland | test-a       | v1          | desktop
+ 13 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop
+ 14 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop  ← StrictMode
+ 15 | form_submit | /experiences/test-e2e-web-events |         |              |             | desktop
+```
+
+Obserwacje:
+- `utm_term=x` i `gclid=y` z URL → NIE zapisane (zgodnie z projektem) ✓
+- `country=Iceland` pochodzi z serwera (`experience_pages.country`), nie z geolokalizacji ✓
+- `form_open` i `form_submit` → `country`, `utm_*` = NULL (wysyłane wyłącznie przy `page_view`) ✓
+
+**Testowa encja zapytania + usunięcie:**
+```
+DELETE FROM inquiries WHERE id='c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040' RETURNING id, angler_name, angler_email, status, created_at;
+                  id                  | angler_name |     angler_email     | status  |          created_at
+--------------------------------------+-------------+----------------------+---------+-------------------------------
+ c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040 | E2E Test    | e2e-test@example.com | pending | 2026-09-09 11:51:07.032933+00
+DELETE 1
+```
+
 ### Raport (format §5)
 
 Patrz PR body.
