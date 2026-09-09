@@ -84,3 +84,5 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 ```
 
 ## Notatki z realizacji
+
+FA-0.15 (web_events) skipped `/patagonia` page_view — add `<WebEventTracker />` (no `country` prop needed for a hub page) to `src/app/(public)/patagonia/page.tsx` when this task is implemented.

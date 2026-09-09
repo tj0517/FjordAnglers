@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import ExpPageMapSection from './exp-page-map-section'
 import type { ExpPage } from './exp-page-map-section'
 import { COUNTRIES } from '@/lib/countries'
+import { WebEventTracker } from '@/components/analytics/WebEventTracker'
 
 const PAGE_SIZE = 12
 
@@ -199,6 +200,7 @@ export default async function TripsPage({
 
   return (
     <div style={{ background: '#F3EDE4' }}>
+      <WebEventTracker country={matchedCountry} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListSchema) }} />
 
       <NavWithUser />

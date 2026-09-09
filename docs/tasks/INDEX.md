@@ -12,16 +12,16 @@ the same PR that changes a task's status. Stage descriptions: `docs/REBUILD_PLAN
 | FA-0.03 | Cron `sync-google-ads` odpowiada na GET | S | sonnet | review | — |
 | FA-0.04 | `AI_AUTO_REPLY_ENABLED` jako enum, nie `coerce.boolean` | S | sonnet | review | — |
 | FA-0.05 | Jedna ścieżka tworzenia zapytania — `source` + UTM; usunięcie `/plan-your-trip` | M | sonnet | done | FA-1.06 |
-| FA-0.06 | `requireAdmin()` we wszystkich mutujących akcjach | M | sonnet | review | — |
+| FA-0.06 | `requireAdmin()` we wszystkich mutujących akcjach | M | sonnet | done | — |
 | FA-0.07 | Naprawa migracji `20260815_fix_nz_species_casing.sql` (1 bajt) | S | sonnet | done | — |
 | FA-0.08 | `pg_dump` produkcji + procedura backupu w README | S | sonnet | done | — |
 | FA-0.09 | Sekrety poza `settings.local.json`, rotacja tokenu GitHub (O-11) | S | — (człowiek) | todo | — |
-| FA-0.10 | Google Ads sync — martwy/zły token (cron 500 mimo naprawionego routingu) | S | sonnet | review | — |
+| FA-0.10 | Google Ads sync — martwy/zły token (cron 500 mimo naprawionego routingu) | S | sonnet | done | — |
 | FA-0.11 | Cena mówi prawdę — jeden `formatPrice` z `currency` strony i jednostką ceny (audyt lejka 5 IX) | S | sonnet | review | — |
 | FA-0.12 | Strona mówi o swoim regionie — stopka, `/trips` per kraj, cross-sell po kraju, tytuł bez podwójnego sufiksu | M | sonnet | review | — |
 | FA-0.13 | `estimateLeadValue(location)` — wartość konwersji per destynacja | S | sonnet | review | FA-0.12 |
 | FA-0.14 | Strona hub `/patagonia` dla grupy reklam „Patagonia ogólna" | M | sonnet | todo | FA-0.11, FA-0.12 |
-| FA-0.15 | Własna telemetria lejka bez cookies — `web_events` + widok `web_funnel_daily` (wyciągnięte z etapu 5) | M | sonnet | todo | — |
+| FA-0.15 | Własna telemetria lejka bez cookies — `web_events` + widok `web_funnel_daily` (wyciągnięte z etapu 5) | M | sonnet | review | — |
 | FA-0.16 | SLA 48 h — data w auto-mailu, licznik i alarm w adminie, `lost_reason_code` jako lista | M | sonnet | todo | — |
 | FA-0.17 | Copy przestaje obiecywać wyłącznie Skandynawię | M | sonnet | review | FA-0.12 |
 

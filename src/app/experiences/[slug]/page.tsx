@@ -16,6 +16,7 @@ import type { SpeciesDetailItem, SpecialAttraction, ContentBlock, FaqItem, Accom
 import type { TripOption } from '@/components/trips/TripOptionsAccordion'
 import { formatPrice, currencySymbol } from '@/lib/format-price'
 import { COUNTRIES, getRegionGroup } from '@/lib/countries'
+import { WebEventTracker } from '@/components/analytics/WebEventTracker'
 
 export const revalidate = 3600
 
@@ -340,6 +341,7 @@ export default async function ExperiencePublicPage({
 
   return (
     <>
+      <WebEventTracker country={page.country} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(tripSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
       {faqSchema != null && (

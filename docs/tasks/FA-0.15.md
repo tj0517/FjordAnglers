@@ -2,7 +2,7 @@
 id: FA-0.15
 title: Własna telemetria lejka bez cookies — `web_events` (page_view / form_open / form_submit per strona)
 stage: 0
-status: todo
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -101,3 +101,114 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 ```
 
 ## Notatki z realizacji
+
+### Stan bieżący przed startem (2026-09-08)
+
+```
+select count(*) from information_schema.tables where table_name='web_events';
+→ 0
+```
+
+Local stack running on ports 54421–54429 (same offset as FA-0.05).
+
+Lokalizacja `form_open` i `form_submit` w kodzie:
+- `form_open` — `useEffect(() => {...}, [])` w `InquiryModal` (montuje się gdy `isOpen=true` w `InquiryWidget`); linia ~284 po zmianach
+- `form_submit` — po `trackSubmitLeadForm` w `handleSubmit`, po sprawdzeniu `res.ok`; ta sama garda co `submittingRef`
+
+### Poprawki względem pliku zadania (za tj 2026-09-08)
+
+1. Rate limit per `path` (nie per IP) — IP nie czytany w ogóle.
+2. `referrer_host` wyłącznie z nagłówka `Referer` (host, `new URL(referer).host`); brak pola `referrer` w schemacie Zod.
+3. `country` = kraj destynacji, z serwera, nie geolokalizacja — `COMMENT ON COLUMN`.
+4. `path` = `window.location.pathname` bez query stringu.
+5. `sendBeacon` z `Blob` (type `application/json`); handler parsuje `req.text()` → `JSON.parse` co obsługuje oba typy.
+6. UTM — WARIANT B: tylko `utm_campaign` i `utm_content` z `window.location.search` bieżącej strony, wyłącznie przy `page_view`; zero importów z `src/lib/utm.ts`.
+7. `/patagonia` — wypada (FA-0.14 `todo`); notatka dopisana do FA-0.14.
+
+### Pliki
+
+- `supabase/migrations/20260908204315_web_events.sql` — tabela + indeks + RLS + view
+- `src/app/api/events/route.ts` — POST handler (Zod strict, rate limit, device, referrer_host)
+- `src/lib/web-events.ts` — `sendWebEvent()`, sendBeacon + fetch keepalive
+- `src/components/analytics/WebEventTracker.tsx` — Client component, `page_view` on mount
+- `src/app/experiences/[slug]/page.tsx` — dodano `<WebEventTracker country={page.country} />`
+- `src/app/trips/page.tsx` — dodano `<WebEventTracker />`
+- `src/components/inquiry/InquiryWidget.tsx` — `form_open` w InquiryModal mount, `form_submit` po sukcesie POST
+- `src/lib/supabase/database.types.ts` — zregenerowane z lokalnej bazy
+- `docs/04-open-questions.md` — O-13 (GclidCapture + localStorage + PT art. 173)
+- `docs/tasks/FA-0.14.md` — notatka o podpięciu `page_view` gdy FA-0.14 zrealizowane
+
+### Test E2E lokalnie — runda finalna (2026-09-09)
+
+Serwer: `pnpm build && pnpm start` z nadpisanymi env vars na lokalny stack Supabase
+(`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54421`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` i
+`SUPABASE_SERVICE_ROLE_KEY` z `supabase status --output env`, `NEXT_PUBLIC_GTM_ID=GTM-DUMMY`
+— aby baner cookie był widoczny w buildzie produkcyjnym).
+Przeglądarka: Playwright headless (chromium). Skrypt scratch w `/tmp/pw-test/e2e-web-events.mjs` (nie w repo).
+
+**Strona**: `/experiences/test-e2e-web-events?utm_campaign=test-a&utm_content=v1&utm_term=x&gclid=y`
+(minimalna strona doświadczenia wstawiona do lokalnej bazy i usunięta po teście).
+
+**Wynik Playwright (sieć):**
+```
+-> Navigating to http://localhost:3000/experiences/test-e2e-web-events?utm_campaign=test-a&utm_content=v1&utm_term=x&gclid=y
+   Page loaded
+-> Waiting for and clicking cookie banner Decline...
+   CLICKED Decline
+   declineClicked: true
+-> Opening InquiryWidget...
+   Clicked "Send Inquiry"
+-> Skipping date selection...
+   Clicked skip-dates button
+-> Filling contact form...
+   firstName filled / lastName filled / email filled / tripLength set to "1"
+-> Submitting form...
+   Clicking: Send
+
+(a) /api/events network requests:
+    [1] POST /api/events -> HTTP 204
+    [2] POST /api/events -> HTTP 204
+    [3] POST /api/events -> HTTP 204
+
+(b) /api/inquiries responses:
+    [1] HTTP 201: {"id":"34ec7374-09f0-4691-939e-3f462eff2088","status":"pending"}
+```
+
+Decline na banerze **KLIKNIĘTY** (`declineClicked: true`). Wynik: **3 eventy** (produkcja, bez HMR).
+
+**SELECT po teście:**
+```
+ id |    event    |               path               | country | utm_campaign | utm_content | device  | referrer_host
+----+-------------+----------------------------------+---------+--------------+-------------+---------+----------------
+ 30 | page_view   | /experiences/test-e2e-web-events | Iceland | test-a       | v1          | desktop | localhost:3000
+ 31 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop | localhost:3000
+ 32 | form_submit | /experiences/test-e2e-web-events |         |              |             | desktop | localhost:3000
+(3 rows)
+```
+
+Obserwacje:
+- Baner cookie pojawił się po hydratacji (`GTM_ID=GTM-DUMMY` w buildzie) — Decline kliknięty ✓
+- `utm_term=x` i `gclid=y` z URL → NIE zapisane (zgodnie z projektem) ✓
+- `country=Iceland` pochodzi z serwera (`experience_pages.country`), nie z geolokalizacji ✓
+- `form_open` i `form_submit` → `country`, `utm_*` = NULL (wysyłane wyłącznie przy `page_view`) ✓
+- `referrer_host` zapisany prawidłowo ✓
+
+**Duplikat form_open w trybie dev (wyjaśnienie):**
+Wcześniejszy test na `pnpm next dev --webpack` dał 4 zdarzenia (dwa `form_open`). Przyczyna:
+webpack HMR rekompiluje moduły w trakcie testu i powoduje odmontowanie/remontowanie
+`InquiryModal` przez warunek `mounted && isOpen && createPortal(...)` — drugi `form_open`
+to artefakt HMR, nie StrictMode (WebEventTracker ma identyczny `useEffect(fn,[])` i
+`page_view` wpadł raz, co obala hipotezę StrictMode). W produkcji (bez HMR): jeden `form_open` ✓.
+
+**Testowa encja zapytania + usunięcie:**
+```
+DELETE FROM inquiries WHERE id='34ec7374-09f0-4691-939e-3f462eff2088' RETURNING id, angler_name, angler_email, status, created_at;
+                  id                  | angler_name |     angler_email     | status  |          created_at
+--------------------------------------+-------------+----------------------+---------+-------------------------------
+ 34ec7374-09f0-4691-939e-3f462eff2088 | E2E Test    | e2e-test@example.com | pending | 2026-09-09 12:51:23.281324+00
+DELETE 1
+```
+
+### Raport (format §5)
+
+Patrz PR body.

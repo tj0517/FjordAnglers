@@ -2,7 +2,7 @@
 id: FA-0.06
 title: requireAdmin() we wszystkich mutujących server actions (dziś 28 akcji w inquiries.ts bez sprawdzenia)
 stage: 0
-status: review
+status: done
 difficulty: M
 model: sonnet
 model_approved:
