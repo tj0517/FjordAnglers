@@ -2,7 +2,7 @@
 id: FA-0.15
 title: Własna telemetria lejka bez cookies — `web_events` (page_view / form_open / form_submit per strona)
 stage: 0
-status: in_progress
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -101,3 +101,43 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 ```
 
 ## Notatki z realizacji
+
+### Stan bieżący przed startem (2026-09-08)
+
+```
+select count(*) from information_schema.tables where table_name='web_events';
+→ 0
+```
+
+Local stack running on ports 54421–54429 (same offset as FA-0.05).
+
+Lokalizacja `form_open` i `form_submit` w kodzie:
+- `form_open` — `useEffect(() => {...}, [])` w `InquiryModal` (montuje się gdy `isOpen=true` w `InquiryWidget`); linia ~284 po zmianach
+- `form_submit` — po `trackSubmitLeadForm` w `handleSubmit`, po sprawdzeniu `res.ok`; ta sama garda co `submittingRef`
+
+### Poprawki względem pliku zadania (za tj 2026-09-08)
+
+1. Rate limit per `path` (nie per IP) — IP nie czytany w ogóle.
+2. `referrer_host` wyłącznie z nagłówka `Referer` (host, `new URL(referer).host`); brak pola `referrer` w schemacie Zod.
+3. `country` = kraj destynacji, z serwera, nie geolokalizacja — `COMMENT ON COLUMN`.
+4. `path` = `window.location.pathname` bez query stringu.
+5. `sendBeacon` z `Blob` (type `application/json`); handler parsuje `req.text()` → `JSON.parse` co obsługuje oba typy.
+6. UTM — WARIANT B: tylko `utm_campaign` i `utm_content` z `window.location.search` bieżącej strony, wyłącznie przy `page_view`; zero importów z `src/lib/utm.ts`.
+7. `/patagonia` — wypada (FA-0.14 `todo`); notatka dopisana do FA-0.14.
+
+### Pliki
+
+- `supabase/migrations/20260908204315_web_events.sql` — tabela + indeks + RLS + view
+- `src/app/api/events/route.ts` — POST handler (Zod strict, rate limit, device, referrer_host)
+- `src/lib/web-events.ts` — `sendWebEvent()`, sendBeacon + fetch keepalive
+- `src/components/analytics/WebEventTracker.tsx` — Client component, `page_view` on mount
+- `src/app/experiences/[slug]/page.tsx` — dodano `<WebEventTracker country={page.country} />`
+- `src/app/trips/page.tsx` — dodano `<WebEventTracker />`
+- `src/components/inquiry/InquiryWidget.tsx` — `form_open` w InquiryModal mount, `form_submit` po sukcesie POST
+- `src/lib/supabase/database.types.ts` — zregenerowane z lokalnej bazy
+- `docs/04-open-questions.md` — O-13 (GclidCapture + localStorage + PT art. 173)
+- `docs/tasks/FA-0.14.md` — notatka o podpięciu `page_view` gdy FA-0.14 zrealizowane
+
+### Raport (format §5)
+
+Patrz PR body.

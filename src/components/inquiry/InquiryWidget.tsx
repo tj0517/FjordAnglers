@@ -27,6 +27,7 @@ import { estimateLeadValue, type TripLength } from '@/lib/leadValue'
 import { getStoredGclid } from '@/lib/gclid'
 import { getStoredUtm } from '@/lib/utm'
 import { currencySymbol } from '@/lib/format-price'
+import { sendWebEvent } from '@/lib/web-events'
 
 const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? '48698936563'
 const FA_EMAIL        = process.env.NEXT_PUBLIC_FA_EMAIL        ?? 'contact@fjordanglers.com'
@@ -278,6 +279,11 @@ function InquiryModal({
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
 
+  // form_open — fires on every InquiryModal mount (= every widget open)
+  useEffect(() => {
+    sendWebEvent({ event: 'form_open', path: window.location.pathname })
+  }, []) // empty dep: once per mount
+
   // form_start — fire once when angler proceeds to the contact form step
   useEffect(() => {
     if (step === 'form') {
@@ -345,6 +351,7 @@ function InquiryModal({
 
       setSubmitState('success')
       trackSubmitLeadForm({ value: leadValue, trip_name: tripTitle })
+      sendWebEvent({ event: 'form_submit', path: window.location.pathname })
     } catch (err) {
       console.error('[InquiryModal] submit error:', err)
       setSubmitState('error')

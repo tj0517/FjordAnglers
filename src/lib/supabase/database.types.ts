@@ -2603,6 +2603,42 @@ export type Database = {
           },
         ]
       }
+      web_events: {
+        Row: {
+          country: string | null
+          created_at: string
+          device: string | null
+          event: string
+          id: number
+          path: string
+          referrer_host: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string
+          device?: string | null
+          event: string
+          id?: number
+          path: string
+          referrer_host?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+        }
+        Update: {
+          country?: string | null
+          created_at?: string
+          device?: string | null
+          event?: string
+          id?: number
+          path?: string
+          referrer_host?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       expedition_waters_public: {
@@ -2672,6 +2708,16 @@ export type Database = {
           f_table_schema?: unknown
           srid?: number | null
           type?: string | null
+        }
+        Relationships: []
+      }
+      web_funnel_daily: {
+        Row: {
+          day: string | null
+          form_opens: number | null
+          form_submits: number | null
+          page_views: number | null
+          path: string | null
         }
         Relationships: []
       }
