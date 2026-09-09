@@ -19,7 +19,8 @@ founder merges ──▶ task status → done in the task file + INDEX.md
 ```
 
 One task = one branch = one PR. The agent never starts a second task in the same
-session without being told to. Tasks are files in `docs/tasks/`; there is no other
+session without being told to. The agent never pushes to `main` directly and never
+merges a PR — merges are done by the founder (tj). Tasks are files in `docs/tasks/`; there is no other
 backlog. Notion holds the business plan, not the engineering tasks.
 
 ## 2. Models and effort
