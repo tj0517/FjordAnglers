@@ -138,51 +138,74 @@ Lokalizacja `form_open` i `form_submit` w kodzie:
 - `docs/04-open-questions.md` — O-13 (GclidCapture + localStorage + PT art. 173)
 - `docs/tasks/FA-0.14.md` — notatka o podpięciu `page_view` gdy FA-0.14 zrealizowane
 
-### Test E2E lokalnie (2026-09-09)
+### Test E2E lokalnie — runda finalna (2026-09-09)
 
-Serwer: `pnpm next dev --webpack` z nadpisanymi env vars na lokalny stack Supabase
-(`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54421`, klucze z `supabase status --output env`).
-Przeglądarka: Playwright headless (chromium). Skrypt scratch w `/tmp/pw-test/` (nie w repo).
+Serwer: `pnpm build && pnpm start` z nadpisanymi env vars na lokalny stack Supabase
+(`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54421`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` i
+`SUPABASE_SERVICE_ROLE_KEY` z `supabase status --output env`, `NEXT_PUBLIC_GTM_ID=GTM-DUMMY`
+— aby baner cookie był widoczny w buildzie produkcyjnym).
+Przeglądarka: Playwright headless (chromium). Skrypt scratch w `/tmp/pw-test/e2e-web-events.mjs` (nie w repo).
 
 **Strona**: `/experiences/test-e2e-web-events?utm_campaign=test-a&utm_content=v1&utm_term=x&gclid=y`
 (minimalna strona doświadczenia wstawiona do lokalnej bazy i usunięta po teście).
 
 **Wynik Playwright (sieć):**
 ```
+-> Navigating to http://localhost:3000/experiences/test-e2e-web-events?utm_campaign=test-a&utm_content=v1&utm_term=x&gclid=y
+   Page loaded
+-> Waiting for and clicking cookie banner Decline...
+   CLICKED Decline
+   declineClicked: true
+-> Opening InquiryWidget...
+   Clicked "Send Inquiry"
+-> Skipping date selection...
+   Clicked skip-dates button
+-> Filling contact form...
+   firstName filled / lastName filled / email filled / tripLength set to "1"
+-> Submitting form...
+   Clicking: Send
+
 (a) /api/events network requests:
     [1] POST /api/events -> HTTP 204
     [2] POST /api/events -> HTTP 204
     [3] POST /api/events -> HTTP 204
-    [4] POST /api/events -> HTTP 204
 
 (b) /api/inquiries responses:
-    [1] HTTP 201: {"id":"c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040","status":"pending"}
+    [1] HTTP 201: {"id":"34ec7374-09f0-4691-939e-3f462eff2088","status":"pending"}
 ```
 
-*4 eventy zamiast 3: React 18 StrictMode w trybie dev uruchamia efekty dwukrotnie
-(`useEffect(fn, [])` w `InquiryModal`), stąd dwa `form_open`. W produkcji jeden.*
+Decline na banerze **KLIKNIĘTY** (`declineClicked: true`). Wynik: **3 eventy** (produkcja, bez HMR).
 
-**SELECT z 3 typami zdarzeń (+ duplikat StrictMode):**
+**SELECT po teście:**
 ```
- id |    event    |               path               | country | utm_campaign | utm_content | device
-----+-------------+----------------------------------+---------+--------------+-------------+---------
- 12 | page_view   | /experiences/test-e2e-web-events | Iceland | test-a       | v1          | desktop
- 13 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop
- 14 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop  ← StrictMode
- 15 | form_submit | /experiences/test-e2e-web-events |         |              |             | desktop
+ id |    event    |               path               | country | utm_campaign | utm_content | device  | referrer_host
+----+-------------+----------------------------------+---------+--------------+-------------+---------+----------------
+ 30 | page_view   | /experiences/test-e2e-web-events | Iceland | test-a       | v1          | desktop | localhost:3000
+ 31 | form_open   | /experiences/test-e2e-web-events |         |              |             | desktop | localhost:3000
+ 32 | form_submit | /experiences/test-e2e-web-events |         |              |             | desktop | localhost:3000
+(3 rows)
 ```
 
 Obserwacje:
+- Baner cookie pojawił się po hydratacji (`GTM_ID=GTM-DUMMY` w buildzie) — Decline kliknięty ✓
 - `utm_term=x` i `gclid=y` z URL → NIE zapisane (zgodnie z projektem) ✓
 - `country=Iceland` pochodzi z serwera (`experience_pages.country`), nie z geolokalizacji ✓
 - `form_open` i `form_submit` → `country`, `utm_*` = NULL (wysyłane wyłącznie przy `page_view`) ✓
+- `referrer_host` zapisany prawidłowo ✓
+
+**Duplikat form_open w trybie dev (wyjaśnienie):**
+Wcześniejszy test na `pnpm next dev --webpack` dał 4 zdarzenia (dwa `form_open`). Przyczyna:
+webpack HMR rekompiluje moduły w trakcie testu i powoduje odmontowanie/remontowanie
+`InquiryModal` przez warunek `mounted && isOpen && createPortal(...)` — drugi `form_open`
+to artefakt HMR, nie StrictMode (WebEventTracker ma identyczny `useEffect(fn,[])` i
+`page_view` wpadł raz, co obala hipotezę StrictMode). W produkcji (bez HMR): jeden `form_open` ✓.
 
 **Testowa encja zapytania + usunięcie:**
 ```
-DELETE FROM inquiries WHERE id='c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040' RETURNING id, angler_name, angler_email, status, created_at;
+DELETE FROM inquiries WHERE id='34ec7374-09f0-4691-939e-3f462eff2088' RETURNING id, angler_name, angler_email, status, created_at;
                   id                  | angler_name |     angler_email     | status  |          created_at
 --------------------------------------+-------------+----------------------+---------+-------------------------------
- c1a77b0b-ae8c-4db5-ac21-52cd4f8b8040 | E2E Test    | e2e-test@example.com | pending | 2026-09-09 11:51:07.032933+00
+ 34ec7374-09f0-4691-939e-3f462eff2088 | E2E Test    | e2e-test@example.com | pending | 2026-09-09 12:51:23.281324+00
 DELETE 1
 ```
 
