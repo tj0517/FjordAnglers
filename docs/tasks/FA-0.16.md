@@ -2,7 +2,7 @@
 id: FA-0.16
 title: SLA 48 h — obietnica terminu w auto-mailu, licznik i alarm w adminie, `lost_reason` jako lista
 stage: 0
-status: todo
+status: in_progress
 difficulty: M
 model: sonnet
 model_approved:
