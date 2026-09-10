@@ -1524,8 +1524,9 @@ export async function declineOffer(
   const { error } = await (svc as any)
     .from('inquiries')
     .update({
-      status:      'lost',
-      lost_reason: note?.trim() || 'Declined by angler',
+      status:           'lost',
+      lost_reason_code: 'went_elsewhere',
+      lost_reason:      note?.trim() || 'Declined by angler',
     })
     .eq('id', inquiry.id)
 
