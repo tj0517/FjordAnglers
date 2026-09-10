@@ -2,7 +2,7 @@
 id: FA-0.16
 title: SLA 48 h — obietnica terminu w auto-mailu, licznik i alarm w adminie, `lost_reason` jako lista
 stage: 0
-status: review
+status: done
 difficulty: M
 model: sonnet
 model_approved:
@@ -264,12 +264,51 @@ Pusty diff = ręczny wpis był zgodny z generatorem. To jest dowód na typy; wcz
 
 **`pnpm typecheck`** — 0 błędów. **`pnpm test -- --run`** — 57/57 zielonych. **`pnpm build`** — exit 0.
 
+### Smoke prod 10 IX
+
+Migracja zaaplikowana na produkcji (`uwxrstbplaoxfghrchcy`) przez `apply_migration` po „go" od tj. Odczyty potwierdzające, wykonane przez agenta zaraz po zapisie:
+
+`list_migrations` — nowy wpis na końcu, nazwa bez prefiksu z datą:
+```
+20260910111336 | inquiries_lost_reason_code
+```
+
+Kolumna, brak backfillu (jedno zapytanie, żeby liczby pochodziły z tego samego momentu):
+```
+column_exists | rows_with_code | rows_total
+--------------+----------------+-----------
+            1 |              0 |         91
+```
+91 wierszy na produkcji, wszystkie `lost_reason_code IS NULL`.
+
+Definicja CHECK — 7 wartości, zgodna z migracją:
+```sql
+CHECK ((lost_reason_code = ANY (ARRAY[
+  'client_silent'::text, 'no_guide'::text, 'guide_slow'::text, 'price'::text,
+  'changed_plans'::text, 'went_elsewhere'::text, 'other'::text])))
+```
+
+**Cron na produkcji — pełne przejście `cron → query → mail`.** `OWNER_EMAIL` ustawione przez tj po merge; digest dotarł. Potwierdzone przez tj 10 IX 2026.
+
+Curl na produkcji (`www.fjordanglers.com`, 10 IX 2026, wykonał tj):
+```
+bez nagłówka:          401
+z Bearer CRON_SECRET:  {"overdue":10,"mailed":true}
+```
+`mailed:true` to potwierdzenie całej ścieżki, nie samego zapytania: endpoint policzył zaległe zapytania, złożył digest i oddał go Resendowi. Digest dotarł na `OWNER_EMAIL` — potwierdzone przez tj.
+
+Dziesięć zaległych zapytań na starcie to stan zastany, nie regres — dokładnie ta liczba, której licznik miał nie przepuszczać niezauważenie.
+
+**Uwaga do przyszłych dowodów:** goły `https://fjordanglers.com/...` zwraca **307** (redirect na `www`). Curl bez `-L` na golej domenie nie dotknie route'u i nie sprawdzi niczego — 307 to ani 401, ani 200, a przy `-o /dev/null -w '%{http_code}'` łatwo wziąć go za wynik testu. W dowodach i dokumentacji używaj `www.fjordanglers.com` albo `curl -L`.
+
 ### Nie zrobione
 
-- Produkcja: migracja **nie** zaaplikowana — STOP gate; zatwierdza i wykonuje tj.
-- `OWNER_EMAIL` na Vercelu — STOP gate; ustawia tj.
-- Treść maila do klienta — zgodnie z uwagą z review: tj zatwierdza osobno, agent nie zmienia.
-- ~~Regeneracja typów~~ — zrobiona, patrz „Dowody" niżej. Zostaje tylko to, co wymaga tj: migracja na prod, `OWNER_EMAIL`, treść maila.
+Wszystkie pozycje z tej sekcji zostały domknięte po review — zostawione dla historii:
+
+- ~~Migracja na prod~~ — zaaplikowana 10 IX przez `apply_migration` po „go" od tj, wersja `20260910111336`. Patrz „Smoke prod 10 IX".
+- ~~`OWNER_EMAIL` na Vercelu~~ — ustawione przez tj po merge; potwierdzone dotarciem digestu.
+- ~~Regeneracja typów~~ — zrobiona, patrz „Dowody".
+- Treść maila do klienta — tj zatwierdza osobno; agent nie zmieniał jej po review.
 
 ### Zauważone, odłożone
 
