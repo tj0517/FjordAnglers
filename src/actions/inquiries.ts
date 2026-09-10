@@ -630,16 +630,24 @@ export async function saveOffer(
 export async function updateInquiryStatus(
   inquiryId: string,
   status: string,
+  lostReasonCode?: string | null,
   lostReason?: string | null,
 ): Promise<ActionResult> {
   await requireAdmin()
+
+  if (status === 'lost' && !lostReasonCode) {
+    return { success: false, error: 'A loss reason is required when marking as lost.' }
+  }
+
   const svc = createServiceClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const update: Record<string, any> = { status }
   if (status === 'lost') {
-    update.lost_reason = lostReason?.trim() || null
+    update.lost_reason_code = lostReasonCode
+    update.lost_reason      = lostReason?.trim() || null
   } else {
-    update.lost_reason = null
+    update.lost_reason_code = null
+    update.lost_reason      = null
   }
   if (status === 'completed') {
     update.stage_reached = 'completed'
@@ -1516,8 +1524,9 @@ export async function declineOffer(
   const { error } = await (svc as any)
     .from('inquiries')
     .update({
-      status:      'lost',
-      lost_reason: note?.trim() || 'Declined by angler',
+      status:           'lost',
+      lost_reason_code: 'went_elsewhere',
+      lost_reason:      note?.trim() || 'Declined by angler',
     })
     .eq('id', inquiry.id)
 

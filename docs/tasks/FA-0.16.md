@@ -2,7 +2,7 @@
 id: FA-0.16
 title: SLA 48 h — obietnica terminu w auto-mailu, licznik i alarm w adminie, `lost_reason` jako lista
 stage: 0
-status: todo
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -102,3 +102,184 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 ```
 
 ## Notatki z realizacji
+
+### Zrobione
+
+1. **Migracja** `20260909134748_inquiries_lost_reason_code.sql` — dodaje `lost_reason_code text CHECK (lost_reason_code in ('client_silent','no_guide','guide_slow','price','changed_plans','went_elsewhere','other'))`. Zastosowana lokalnie przez `supabase db reset` (wykonany ręcznie przez tj — agent-guard blokuje to polecenie tak jak operacje prod, patrz `docs/deferred-tasks.md`). **Nie** zaaplikowana na produkcji — STOP gate, zatwierdza i wykonuje tj.
+
+2. **`src/lib/business-days.ts`** — nowy moduł `addBusinessDays(date, n, tz)`. Algorytm: wyciąga lokalną datę przez `Intl.DateTimeFormat` (DST-safe), snapuje weekendy do następnego poniedziałku, potem przesuwa dokładnie `n` dni roboczych. Całe dalsze liczenie w UTC — odporne na DST. `formatBusinessDay(d)` zwraca `"Tuesday, 15 September"`.
+
+3. **`src/lib/business-days.test.ts`** — 4 przypadki: Pt 15:00 CEST → Wt; Sb → Śr; Śr → Pt; niedziela ostatnia-października (DST) → Śr. Wszystkie zielone.
+
+4. **Auto-mail do klienta** (`src/emails/inquiry-received-angler.tsx` + `src/app/api/inquiries/route.ts`) — prop `replyByDate: string` (format `"Tuesday, 15 September"`); zdanie body zastąpione na `We'll come back to you with availability and a price by <strong>{replyByDate}</strong>.`; badge `We'll be in touch within 24 hours.` → `We'll be in touch by {replyByDate}.`. **Treść czeka na zatwierdzenie tj — STOP otwarty.**
+
+5. **`updateInquiryStatus`** (`src/actions/inquiries.ts`) — nowa sygnatura `(inquiryId, status, lostReasonCode?, lostReason?)`. Walidacja server-side: status='lost' bez kodu → `{ success: false, error: 'A loss reason is required when marking as lost.' }`. Przy 'lost' zapisuje `lost_reason_code`; przy innych statusach zeruje do `null`.
+
+6. **`StatusChanger.tsx`** — kompletny rewrite. Select wymagany (7 opcji); przycisk Confirm disabled do czasu wyboru. Wolny tekst `lostComment` opcjonalny. Walidacja client-side + wywołanie `updateInquiryStatus(id, 'lost', lostReasonCode, lostComment || null)`.
+
+7. **Lista w adminie** (`InquiriesClient.tsx`) — `noOfferSinceHours(row)`: null jeśli `offer_sent_at != null`, `external_offer_sent=true`, lub status w `{lost,cancelled,deposit_paid,completed}`; inaczej godziny od `created_at`. `SlaBadge`: `{hours}h bez oferty` orange >24 h, red >48 h, niewidoczny <24 h. Sortowanie „⏱ Bez oferty od" przybliżone przez `sortSla` toggle. `offer_sent_at` dodano do select query w `page.tsx`.
+
+8. **`GET /api/cron/offer-sla`** (`src/app/api/cron/offer-sla/route.ts`) — Bearer `CRON_SECRET` (401 bez); query `offer_sent_at IS NULL + external_offer_sent=false + status NOT IN (lost,cancelled,deposit_paid,completed) + created_at < NOW()-48h`. Zero wyników → `{overdue:0}`. `OWNER_EMAIL` nieustawiony → `{overdue:N, mailed:false}`. Gdy N>0 i `OWNER_EMAIL` ustawiony → digest HTML (name | country | **status** | hours | admin link) przez Resend REST fetch; reply colors orange >72h red. `POST = GET` dla kompatybilności.
+
+9. **`vercel.json`** — `"0 5 * * *"` UTC = 07:00 CEST / 06:00 CET. Cron Vercel nie ma DST — schedules na stałe w UTC.
+
+10. **`src/lib/env.ts`** — `OWNER_EMAIL: z.string().email().optional()` (STOP: nie ustawiać na Vercelu bez zgody tj).
+
+11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` w Row/Insert/Update. Pierwotnie dopisane ręcznie, bo w tamtym momencie Docker/OrbStack był padnięty i `supabase gen types --local` nie startował. Po podniesieniu Dockera plik został **zregenerowany generatorem** i wynik jest bajt w bajt identyczny z wersją ręczną — to regeneracja weryfikuje typy, nie `db diff --local` (ten porównuje bazę z migracjami i pliku typów w ogóle nie widzi).
+
+12. **`docs/deferred-tasks.md`** — wpis FA-0.16: agent-guard blokuje `db reset` i `migration repair --local` tak samo jak operacje prod; brak odblokowania per polecenie; zadanie S: naprawić wzorce i komunikat.
+
+13. **`declineOffer` (`src/actions/inquiries.ts:1527`)** — poprawka po review: klient odrzucający ofertę na `/offers/[token]` ustawiał `status='lost'` **bez** `lost_reason_code`, omijając walidację z `updateInquiryStatus`. Teraz zapisuje `lost_reason_code: 'went_elsewhere'` obok wolnego tekstu. Grep potwierdził, że to jedyne dwa miejsca zapisujące `status='lost'` w całym `src/` — nie ma trzeciej ścieżki.
+
+14. **`src/actions/__tests__/lostReasonCode.test.ts`** — 4 nowe testy jednostkowe: `lost` bez kodu → odrzucone; `lost` z pustym stringiem → odrzucone; `lost` z kodem → zapis obu pól; przejście na status inny niż `lost` → `lost_reason_code = null`.
+
+### Dowody (wszystkie wykonane 10 IX 2026, lokalny stack)
+
+**`supabase migration list --local` — 5 wersji, lokalne = zdalne:**
+```
+   Local          | Remote         | Time (UTC)
+  ----------------|----------------|---------------------
+   20260904165037 | 20260904165037 | 2026-09-04 16:50:37
+   20260904165038 | 20260904165038 | 2026-09-04 16:50:38
+   20260904210532 | 20260904210532 | 2026-09-04 21:05:32
+   20260909131403 | 20260909131403 | 2026-09-09 13:14:03
+   20260909134748 | 20260909134748 | 2026-09-09 13:47:48
+```
+
+**`supabase db diff --local` (bez szumu PostGIS `WARNING (01007)`):**
+```
+Applying migration 20260904165037_baseline_prod.sql...
+Applying migration 20260904165038_fix_nz_species_casing.sql...
+Applying migration 20260904210532_inquiries_source_utm.sql...
+Applying migration 20260909131403_web_events.sql...
+Applying migration 20260909134748_inquiries_lost_reason_code.sql...
+Diffing schemas...
+No schema changes found
+```
+
+**Czerwony dowód CHECK — `lost_reason_code='vibes'`:**
+```
+ERROR:  new row for relation "inquiries" violates check constraint "inquiries_lost_reason_code_check"
+DETAIL:  Failing row contains (11111111-…, …, vibes).
+```
+
+**Zielony dowód — wartość z listy przechodzi:**
+```
+        step         | status | lost_reason_code |       lost_reason
+---------------------+--------+------------------+-------------------------
+ VALID CODE ACCEPTED | lost   | price            | Too expensive for group
+```
+
+**Walidacja `updateInquiryStatus` — 4/4 zielone** (`src/actions/__tests__/lostReasonCode.test.ts`):
+```
+ ✓ rejects status=lost with no reason code
+ ✓ rejects status=lost with an empty-string reason code
+ ✓ accepts status=lost with a reason code and writes both fields
+ ✓ clears lost_reason_code when moving to a non-lost status
+```
+
+**`declineOffer` po poprawce — realne wywołanie na lokalnej bazie, potem SELECT:**
+```
+[declineOffer] Inquiry 22222222-… declined by angler
+declineOffer result: {"success":true}
+SELECT after declineOffer: {
+  "id": "22222222-2222-2222-2222-222222222222",
+  "status": "lost",
+  "lost_reason_code": "went_elsewhere",
+  "lost_reason": "Went with another operator"
+}
+```
+
+**Niezależny `psql` SELECT — obie ścieżki zapisu:**
+```
+                  id                  |  angler_name   | status | lost_reason_code |        lost_reason
+--------------------------------------+----------------+--------+------------------+----------------------------
+ 22222222-2222-2222-2222-222222222222 | Decline Tester | lost   | went_elsewhere   | Went with another operator
+ 11111111-1111-1111-1111-111111111111 | Test Angler    | lost   | price            | Too expensive for group
+```
+
+**Render maila — data zgodna z testem jednostkowym** (piątek 2026-09-11 15:00 CEST → wtorek):
+```
+computed replyByDate = Tuesday, 15 September
+MATCH: We'll come back to you with availability and a price by Tuesday, 15 September .
+MATCH: We'll be in touch by Tuesday, 15 September .
+contains "24 hours"? → false
+```
+
+**Cron — auth (serwer podniesiony na lokalnym Supabase, nie na projekcie testowym):**
+```
+=== NO HEADER ===        HTTP 401   {"error":"Unauthorized"}
+=== WRONG SECRET ===     HTTP 401
+=== CORRECT SECRET ===   HTTP 200   {"overdue":0}
+```
+
+**Cron — logika zapytania. Zaseedowane 6 wierszy pokrywających każdą gałąź wykluczenia:**
+```
+  angler_name   |   status   | external_offer_sent | age_h | has_offer
+----------------+------------+---------------------+-------+-----------
+ Decline Tester | lost       | f                   |    80 | f    ← status wykluczony
+ Test Angler    | lost       | f                   |    72 | f    ← status wykluczony
+ Overdue Ola    | pending    | f                   |    72 | f    ← LICZY SIĘ
+ Offered Olaf   | offer_sent | f                   |    72 | t    ← ma offer_sent_at
+ External Eva   | offer_sent | t                   |    72 | f    ← external_offer_sent
+ Fresh Filip    | pending    | f                   |    10 | f    ← młodszy niż 48 h
+```
+```
+HTTP 200   {"overdue":1,"mailed":false}
+```
+Liczy dokładnie jeden wiersz (Overdue Ola); `mailed:false`, bo `OWNER_EMAIL` nieustawiony — udokumentowana ścieżka graceful.
+
+**Lista w adminie — Playwright, zalogowany admin** (`docs/proofs/fa016-admin-sla-{lead,guide}.png`):
+
+Zakładka *Lead* — wiersz po terminie ma czerwony znacznik, świeży nie ma:
+```
+  Overdue Ola    "Overdue Ola | No contact | … | Pending | 72h no offer | 3d ago"
+  Fresh Filip    "Fresh Filip | New | … | Pending |  | today"        ← brak znacznika
+```
+Zakładka *Guide* — wiersze z ofertą nie mają znacznika mimo 72 h:
+```
+  Offered Olaf   "Offered Olaf | … | Offer Sent |  | 3d ago"          ← ma offer_sent_at
+  External Eva   "External Eva | … | Offer Sent |  | 3d ago"          ← external_offer_sent=true
+  liczba znaczników "no offer" na tej zakładce: 0
+```
+
+**`pnpm lint` — `main` vs gałąź, oba przebiegi pełne:**
+```
+main:                  ✖ 96 problems (40 errors, 56 warnings)
+feat/offer-sla-48h:    ✖ 96 problems (40 errors, 56 warnings)
+```
+Identycznie — zero nowych błędów. Pliki FA-0.16 osobno: 0 errors (2 ostrzeżenia `labelCell`/`valueCell` w `inquiry-received-angler.tsx` są sprzed tego zadania, w nietkniętych liniach).
+
+**Regeneracja typów — `supabase gen types typescript --local`** (po podniesieniu Dockera):
+```
+$ supabase gen types typescript --local > src/lib/supabase/database.types.ts
+$ git diff --stat src/lib/supabase/database.types.ts
+(pusto — plik bez zmian)
+
+sha256 wygenerowany : d9e1a2d8654b2cecffb3d901efdc3eb87925f64a805f9458bb20d4bde8914d12
+sha256 zacommitowany: d9e1a2d8654b2cecffb3d901efdc3eb87925f64a805f9458bb20d4bde8914d12
+lost_reason_code w pliku: 3 wystąpienia (Row / Insert / Update)
+```
+Pusty diff = ręczny wpis był zgodny z generatorem. To jest dowód na typy; wcześniejsze powołanie się w tym miejscu na `db diff --local` było błędne — `db diff` porównuje bazę z migracjami i nie czyta `database.types.ts`.
+
+**`pnpm typecheck`** — 0 błędów. **`pnpm test -- --run`** — 57/57 zielonych. **`pnpm build`** — exit 0.
+
+### Nie zrobione
+
+- Produkcja: migracja **nie** zaaplikowana — STOP gate; zatwierdza i wykonuje tj.
+- `OWNER_EMAIL` na Vercelu — STOP gate; ustawia tj.
+- Treść maila do klienta — zgodnie z uwagą z review: tj zatwierdza osobno, agent nie zmienia.
+- ~~Regeneracja typów~~ — zrobiona, patrz „Dowody" niżej. Zostaje tylko to, co wymaga tj: migracja na prod, `OWNER_EMAIL`, treść maila.
+
+### Zauważone, odłożone
+
+- Lokalny Auth (`/auth/v1/admin/users`) odrzuca zarówno legacy `SERVICE_ROLE_KEY`, jak i nowy `SECRET_KEY` z `bad_jwt: signing method HS256 is invalid` — użytkownika testowego trzeba było wstawić bezpośrednio do `auth.users` przez SQL. Nie dotyczy FA-0.16, ale każdy przyszły e2e z logowaniem na to trafi.
+- `agent-guard.sh` / `FA_ALLOW_PROD=1` — patrz `docs/deferred-tasks.md` FA-0.16 (i FA-1.01 wcześniej).
+
+### Decyzje
+
+- Algorytm business days: sobota → snap do poniedziałku → +2 = środa (nie sobota+2=poniedziałek). Decyzja agenta, zgodna z kryterium „sobota → środa" z sekcji „Gotowe, gdy" — nie zatwierdzenie tj.
+- Email wording: oba miejsca (body + badge) zmienione, bo oba obiecywały „within 24 hours". **Treść czeka na zatwierdzenie tj — STOP otwarty.**
+- Digest email: inline HTML przez Resend REST (nie React email template) — cron route samowystarczalny.
+- `vercel.json` `"0 5 * * *"`: DST caveat zanotowany w komentarzu modułu i w notatce powyżej.
+

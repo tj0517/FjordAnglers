@@ -20,6 +20,7 @@ import { createInquiry } from '@/lib/inquiries/create'
 import { sendInquiryReceivedFaEmail, sendInquiryReceivedAnglerEmail } from '@/lib/email'
 import { env } from '@/lib/env'
 import { runAgentRound1 } from '@/lib/ai/inquiry-agent'
+import { addBusinessDays, formatBusinessDay } from '@/lib/business-days'
 
 export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
@@ -167,6 +168,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         requestedDates: sortedDates,
         partySize:      parsed.data.party_size,
         inquiryId:      inquiry.id,
+        replyByDate:    formatBusinessDay(addBusinessDays(new Date(), 2, 'Europe/Warsaw')),
       }),
     ])
   } catch (err) {

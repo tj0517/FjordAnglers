@@ -19,6 +19,16 @@ const STATUSES = [
   { key: 'cancelled',               label: 'Cancelled',          color: '#FCA5A5', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.25)'   },
 ] as const
 
+const LOST_REASON_CODES: { key: string; label: string }[] = [
+  { key: 'client_silent',  label: 'Client went silent'       },
+  { key: 'no_guide',       label: 'No guide available'       },
+  { key: 'guide_slow',     label: 'Guide too slow'           },
+  { key: 'price',          label: 'Price too high'           },
+  { key: 'changed_plans',  label: 'Client changed plans'     },
+  { key: 'went_elsewhere', label: 'Went to another operator' },
+  { key: 'other',          label: 'Other'                    },
+]
+
 type StatusKey = typeof STATUSES[number]['key']
 
 export function StatusChanger({
@@ -32,7 +42,8 @@ export function StatusChanger({
   const [pending, start]  = useTransition()
   const [changingTo, setChangingTo] = useState<StatusKey | null>(null)
   const [showLostInput, setShowLostInput] = useState(false)
-  const [lostReason, setLostReason]       = useState('')
+  const [lostReasonCode, setLostReasonCode] = useState<string>('')
+  const [lostComment, setLostComment]       = useState('')
   const [error, setError]                 = useState<string | null>(null)
 
   function handleClick(key: StatusKey) {
@@ -53,13 +64,24 @@ export function StatusChanger({
   }
 
   function handleConfirmLost() {
+    if (!lostReasonCode) {
+      setError('Please select a reason.')
+      return
+    }
     setError(null)
     setChangingTo('lost')
     start(async () => {
-      const res = await updateInquiryStatus(inquiryId, 'lost', lostReason.trim() || null)
+      const res = await updateInquiryStatus(
+        inquiryId,
+        'lost',
+        lostReasonCode,
+        lostComment.trim() || null,
+      )
       setChangingTo(null)
       if (res.success) {
         setShowLostInput(false)
+        setLostReasonCode('')
+        setLostComment('')
         router.refresh()
       } else {
         setError(res.error)
@@ -110,26 +132,46 @@ export function StatusChanger({
           })}
         </div>
 
-        {/* Lost reason input */}
+        {/* Lost form */}
         {showLostInput && (
           <div className="space-y-2">
+            {/* Required: reason code */}
+            <select
+              value={lostReasonCode}
+              onChange={e => setLostReasonCode(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl text-xs f-body outline-none"
+              style={{
+                background: 'rgba(255,255,255,0.07)',
+                border:     `1px solid ${lostReasonCode ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.3)'}`,
+                color:      lostReasonCode ? '#FFFFFF' : 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <option value="" disabled>Select reason (required)</option>
+              {LOST_REASON_CODES.map(r => (
+                <option key={r.key} value={r.key} style={{ background: '#0A2E4D', color: '#FFFFFF' }}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Optional: free-text comment */}
             <input
               type="text"
-              value={lostReason}
-              onChange={e => setLostReason(e.target.value)}
-              placeholder="Why was this lost? (optional)"
-              autoFocus
+              value={lostComment}
+              onChange={e => setLostComment(e.target.value)}
+              placeholder="Comment (optional)"
               className="w-full px-3 py-2 rounded-xl text-xs f-body outline-none placeholder:opacity-30"
               style={{
                 background: 'rgba(255,255,255,0.07)',
-                border:     '1px solid rgba(239,68,68,0.3)',
+                border:     '1px solid rgba(239,68,68,0.2)',
                 color:      '#FFFFFF',
               }}
             />
+
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => { setShowLostInput(false); setLostReason('') }}
+                onClick={() => { setShowLostInput(false); setLostReasonCode(''); setLostComment('') }}
                 className="flex-1 py-2 rounded-xl text-[10px] font-semibold f-body"
                 style={{
                   background: 'rgba(255,255,255,0.05)',
@@ -141,13 +183,14 @@ export function StatusChanger({
               </button>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !lostReasonCode}
                 onClick={handleConfirmLost}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold f-body"
                 style={{
-                  background: 'rgba(239,68,68,0.22)',
-                  color:      '#FCA5A5',
-                  border:     '1px solid rgba(239,68,68,0.35)',
+                  background: lostReasonCode ? 'rgba(239,68,68,0.22)' : 'rgba(255,255,255,0.05)',
+                  color:      lostReasonCode ? '#FCA5A5' : 'rgba(255,255,255,0.3)',
+                  border:     lostReasonCode ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.08)',
+                  cursor:     lostReasonCode ? 'pointer' : 'not-allowed',
                 }}
               >
                 {changingTo === 'lost' && <Loader2 size={9} className="animate-spin" />}

@@ -7,6 +7,7 @@ export interface InquiryReceivedAnglerEmailProps {
   requestedDates: string[]   // YYYY-MM-DD[]
   partySize: number
   inquiryId: string
+  replyByDate: string        // e.g. "Tuesday, 15 September"
 }
 
 export function InquiryReceivedAnglerEmail({
@@ -15,6 +16,7 @@ export function InquiryReceivedAnglerEmail({
   requestedDates,
   partySize,
   inquiryId,
+  replyByDate,
 }: InquiryReceivedAnglerEmailProps) {
   return (
     <EmailLayout preview={`Your inquiry for ${tripTitle} has been received`}>
@@ -22,13 +24,13 @@ export function InquiryReceivedAnglerEmail({
 
       <Text style={text}>
         Hi {anglerName},&nbsp; we&apos;ve received your inquiry for <strong>{tripTitle}</strong>.
-        Our team will review it and get back to you within 24 hours.
+        We&apos;ll come back to you with availability and a price by <strong>{replyByDate}</strong>.
       </Text>
 
       {/* Status badge */}
       <Section style={successBox}>
         <Text style={{ ...textSmall, margin: 0, fontWeight: 700, color: '#166534' }}>
-          ✅ &nbsp;Your inquiry has been received by FjordAnglers. We&apos;ll be in touch within 24 hours.
+          ✅ &nbsp;Your inquiry has been received by FjordAnglers. We&apos;ll be in touch by {replyByDate}.
         </Text>
       </Section>
 
