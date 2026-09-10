@@ -125,21 +125,143 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 
 10. **`src/lib/env.ts`** — `OWNER_EMAIL: z.string().email().optional()` (STOP: nie ustawiać na Vercelu bez zgody tj).
 
-11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` dodane ręcznie do Row/Insert/Update (lokalny Supabase niezdolny przez problem OrbStack z kontenerem Docker w czasie regeneracji; kolumna jest w baselinie i nowej migracji, typy odpowiadają schematowi).
+11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` dodane ręcznie do Row/Insert/Update (w chwili generacji lokalny Docker/OrbStack był padnięty; po naprawie `db diff --local` potwierdza, że schemat i typy się zgadzają).
 
 12. **`docs/deferred-tasks.md`** — wpis FA-0.16: agent-guard blokuje `db reset` i `migration repair --local` tak samo jak operacje prod; brak odblokowania per polecenie; zadanie S: naprawić wzorce i komunikat.
 
+13. **`declineOffer` (`src/actions/inquiries.ts:1527`)** — poprawka po review: klient odrzucający ofertę na `/offers/[token]` ustawiał `status='lost'` **bez** `lost_reason_code`, omijając walidację z `updateInquiryStatus`. Teraz zapisuje `lost_reason_code: 'went_elsewhere'` obok wolnego tekstu. Grep potwierdził, że to jedyne dwa miejsca zapisujące `status='lost'` w całym `src/` — nie ma trzeciej ścieżki.
+
+14. **`src/actions/__tests__/lostReasonCode.test.ts`** — 4 nowe testy jednostkowe: `lost` bez kodu → odrzucone; `lost` z pustym stringiem → odrzucone; `lost` z kodem → zapis obu pól; przejście na status inny niż `lost` → `lost_reason_code = null`.
+
+### Dowody (wszystkie wykonane 10 IX 2026, lokalny stack)
+
+**`supabase migration list --local` — 5 wersji, lokalne = zdalne:**
+```
+   Local          | Remote         | Time (UTC)
+  ----------------|----------------|---------------------
+   20260904165037 | 20260904165037 | 2026-09-04 16:50:37
+   20260904165038 | 20260904165038 | 2026-09-04 16:50:38
+   20260904210532 | 20260904210532 | 2026-09-04 21:05:32
+   20260909131403 | 20260909131403 | 2026-09-09 13:14:03
+   20260909134748 | 20260909134748 | 2026-09-09 13:47:48
+```
+
+**`supabase db diff --local` (bez szumu PostGIS `WARNING (01007)`):**
+```
+Applying migration 20260904165037_baseline_prod.sql...
+Applying migration 20260904165038_fix_nz_species_casing.sql...
+Applying migration 20260904210532_inquiries_source_utm.sql...
+Applying migration 20260909131403_web_events.sql...
+Applying migration 20260909134748_inquiries_lost_reason_code.sql...
+Diffing schemas...
+No schema changes found
+```
+
+**Czerwony dowód CHECK — `lost_reason_code='vibes'`:**
+```
+ERROR:  new row for relation "inquiries" violates check constraint "inquiries_lost_reason_code_check"
+DETAIL:  Failing row contains (11111111-…, …, vibes).
+```
+
+**Zielony dowód — wartość z listy przechodzi:**
+```
+        step         | status | lost_reason_code |       lost_reason
+---------------------+--------+------------------+-------------------------
+ VALID CODE ACCEPTED | lost   | price            | Too expensive for group
+```
+
+**Walidacja `updateInquiryStatus` — 4/4 zielone** (`src/actions/__tests__/lostReasonCode.test.ts`):
+```
+ ✓ rejects status=lost with no reason code
+ ✓ rejects status=lost with an empty-string reason code
+ ✓ accepts status=lost with a reason code and writes both fields
+ ✓ clears lost_reason_code when moving to a non-lost status
+```
+
+**`declineOffer` po poprawce — realne wywołanie na lokalnej bazie, potem SELECT:**
+```
+[declineOffer] Inquiry 22222222-… declined by angler
+declineOffer result: {"success":true}
+SELECT after declineOffer: {
+  "id": "22222222-2222-2222-2222-222222222222",
+  "status": "lost",
+  "lost_reason_code": "went_elsewhere",
+  "lost_reason": "Went with another operator"
+}
+```
+
+**Niezależny `psql` SELECT — obie ścieżki zapisu:**
+```
+                  id                  |  angler_name   | status | lost_reason_code |        lost_reason
+--------------------------------------+----------------+--------+------------------+----------------------------
+ 22222222-2222-2222-2222-222222222222 | Decline Tester | lost   | went_elsewhere   | Went with another operator
+ 11111111-1111-1111-1111-111111111111 | Test Angler    | lost   | price            | Too expensive for group
+```
+
+**Render maila — data zgodna z testem jednostkowym** (piątek 2026-09-11 15:00 CEST → wtorek):
+```
+computed replyByDate = Tuesday, 15 September
+MATCH: We'll come back to you with availability and a price by Tuesday, 15 September .
+MATCH: We'll be in touch by Tuesday, 15 September .
+contains "24 hours"? → false
+```
+
+**Cron — auth (serwer podniesiony na lokalnym Supabase, nie na projekcie testowym):**
+```
+=== NO HEADER ===        HTTP 401   {"error":"Unauthorized"}
+=== WRONG SECRET ===     HTTP 401
+=== CORRECT SECRET ===   HTTP 200   {"overdue":0}
+```
+
+**Cron — logika zapytania. Zaseedowane 6 wierszy pokrywających każdą gałąź wykluczenia:**
+```
+  angler_name   |   status   | external_offer_sent | age_h | has_offer
+----------------+------------+---------------------+-------+-----------
+ Decline Tester | lost       | f                   |    80 | f    ← status wykluczony
+ Test Angler    | lost       | f                   |    72 | f    ← status wykluczony
+ Overdue Ola    | pending    | f                   |    72 | f    ← LICZY SIĘ
+ Offered Olaf   | offer_sent | f                   |    72 | t    ← ma offer_sent_at
+ External Eva   | offer_sent | t                   |    72 | f    ← external_offer_sent
+ Fresh Filip    | pending    | f                   |    10 | f    ← młodszy niż 48 h
+```
+```
+HTTP 200   {"overdue":1,"mailed":false}
+```
+Liczy dokładnie jeden wiersz (Overdue Ola); `mailed:false`, bo `OWNER_EMAIL` nieustawiony — udokumentowana ścieżka graceful.
+
+**Lista w adminie — Playwright, zalogowany admin** (`docs/proofs/fa016-admin-sla-{lead,guide}.png`):
+
+Zakładka *Lead* — wiersz po terminie ma czerwony znacznik, świeży nie ma:
+```
+  Overdue Ola    "Overdue Ola | No contact | … | Pending | 72h no offer | 3d ago"
+  Fresh Filip    "Fresh Filip | New | … | Pending |  | today"        ← brak znacznika
+```
+Zakładka *Guide* — wiersze z ofertą nie mają znacznika mimo 72 h:
+```
+  Offered Olaf   "Offered Olaf | … | Offer Sent |  | 3d ago"          ← ma offer_sent_at
+  External Eva   "External Eva | … | Offer Sent |  | 3d ago"          ← external_offer_sent=true
+  liczba znaczników "no offer" na tej zakładce: 0
+```
+
+**`pnpm lint` — `main` vs gałąź, oba przebiegi pełne:**
+```
+main:                  ✖ 96 problems (40 errors, 56 warnings)
+feat/offer-sla-48h:    ✖ 96 problems (40 errors, 56 warnings)
+```
+Identycznie — zero nowych błędów. Pliki FA-0.16 osobno: 0 errors (2 ostrzeżenia `labelCell`/`valueCell` w `inquiry-received-angler.tsx` są sprzed tego zadania, w nietkniętych liniach).
+
+**`pnpm typecheck`** — 0 błędów. **`pnpm test -- --run`** — 57/57 zielonych. **`pnpm build`** — exit 0.
+
 ### Nie zrobione
 
-- Produkcja: migracja **nie** zaaplikowana — STOP gate; tj wykonuje po merge PR.
-- `supabase gen types --local`: lokalny kontener Docker (OrbStack) unhealthy w czasie sesji → typy zaktualizowane ręcznie. Trzeba zregenerować po naprawie kontenera lub po `db reset` lokalnym w kolejnej sesji.
-- Zrzuty ekranu Playwright: lokalny serwer (`pnpm start`) wymaga `.env.local` → `pnpm dev` zakazany per MEMORY. Dowody wizualne do zrzucenia przez tj.
-- Curl proof crona: wymaga działającego `pnpm start`; jak wyżej.
-- `psql` red proof CHECK: lokalny kontener unhealthy; wykonuje tj po naprawie lub na prod po migracji.
+- Produkcja: migracja **nie** zaaplikowana — STOP gate; zatwierdza i wykonuje tj.
+- `OWNER_EMAIL` na Vercelu — STOP gate; ustawia tj.
+- Treść maila do klienta — zgodnie z uwagą z review: tj zatwierdza osobno, agent nie zmienia.
+- `supabase gen types --local` nie przepuszczone przez CLI (w chwili generacji Docker padł); kolumna dopisana ręcznie, ale `db diff --local` → `No schema changes found` potwierdza zgodność typów ze schematem.
 
 ### Zauważone, odłożone
 
-- Lokalny Supabase kontener OrbStack unhealthy przez EOF przy Docker socket; diagnoza w tej sesji; nie ma związku z migracją FA-0.16.
+- Lokalny Auth (`/auth/v1/admin/users`) odrzuca zarówno legacy `SERVICE_ROLE_KEY`, jak i nowy `SECRET_KEY` z `bad_jwt: signing method HS256 is invalid` — użytkownika testowego trzeba było wstawić bezpośrednio do `auth.users` przez SQL. Nie dotyczy FA-0.16, ale każdy przyszły e2e z logowaniem na to trafi.
 - `agent-guard.sh` / `FA_ALLOW_PROD=1` — patrz `docs/deferred-tasks.md` FA-0.16 (i FA-1.01 wcześniej).
 
 ### Decyzje
