@@ -1496,6 +1496,7 @@ export type Database = {
           internal_notes: string | null
           last_contact_at: string | null
           lost_reason: string | null
+          lost_reason_code: string | null
           message: string | null
           next_action: string | null
           offer_answers: Json
@@ -1565,6 +1566,7 @@ export type Database = {
           internal_notes?: string | null
           last_contact_at?: string | null
           lost_reason?: string | null
+          lost_reason_code?: string | null
           message?: string | null
           next_action?: string | null
           offer_answers?: Json
@@ -1634,6 +1636,7 @@ export type Database = {
           internal_notes?: string | null
           last_contact_at?: string | null
           lost_reason?: string | null
+          lost_reason_code?: string | null
           message?: string | null
           next_action?: string | null
           offer_answers?: Json

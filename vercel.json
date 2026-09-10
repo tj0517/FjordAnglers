@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync-google-ads",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/offer-sla",
+      "schedule": "0 5 * * *"
     }
   ],
   "git": {

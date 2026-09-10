@@ -2,7 +2,7 @@
 id: FA-0.16
 title: SLA 48 h — obietnica terminu w auto-mailu, licznik i alarm w adminie, `lost_reason` jako lista
 stage: 0
-status: in_progress
+status: review
 difficulty: M
 model: sonnet
 model_approved:
@@ -102,3 +102,50 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 ```
 
 ## Notatki z realizacji
+
+### Zrobione
+
+1. **Migracja** `20260909134748_inquiries_lost_reason_code.sql` — dodaje `lost_reason_code text CHECK (lost_reason_code in ('client_silent','no_guide','guide_slow','price','changed_plans','went_elsewhere','other'))`. Zastosowana lokalnie przez `supabase db reset` (wykonany ręcznie przez tj — agent-guard blokuje to polecenie tak jak operacje prod, patrz `docs/deferred-tasks.md`). **Nie** zaaplikowana na produkcji — STOP gate, zatwierdza i wykonuje tj.
+
+2. **`src/lib/business-days.ts`** — nowy moduł `addBusinessDays(date, n, tz)`. Algorytm: wyciąga lokalną datę przez `Intl.DateTimeFormat` (DST-safe), snapuje weekendy do następnego poniedziałku, potem przesuwa dokładnie `n` dni roboczych. Całe dalsze liczenie w UTC — odporne na DST. `formatBusinessDay(d)` zwraca `"Tuesday, 15 September"`.
+
+3. **`src/lib/business-days.test.ts`** — 4 przypadki: Pt 15:00 CEST → Wt; Sb → Śr; Śr → Pt; niedziela ostatnia-października (DST) → Śr. Wszystkie zielone.
+
+4. **Auto-mail do klienta** (`src/emails/inquiry-received-angler.tsx` + `src/app/api/inquiries/route.ts`) — prop `replyByDate: string` (format `"Tuesday, 15 September"`); zdanie body zastąpione na `We'll come back to you with availability and a price by <strong>{replyByDate}</strong>.`; badge `We'll be in touch within 24 hours.` → `We'll be in touch by {replyByDate}.`. Oba miejsca zatwierdzone przez tj w dialogu STOP.
+
+5. **`updateInquiryStatus`** (`src/actions/inquiries.ts`) — nowa sygnatura `(inquiryId, status, lostReasonCode?, lostReason?)`. Walidacja server-side: status='lost' bez kodu → `{ success: false, error: 'A loss reason is required when marking as lost.' }`. Przy 'lost' zapisuje `lost_reason_code`; przy innych statusach zeruje do `null`.
+
+6. **`StatusChanger.tsx`** — kompletny rewrite. Select wymagany (7 opcji); przycisk Confirm disabled do czasu wyboru. Wolny tekst `lostComment` opcjonalny. Walidacja client-side + wywołanie `updateInquiryStatus(id, 'lost', lostReasonCode, lostComment || null)`.
+
+7. **Lista w adminie** (`InquiriesClient.tsx`) — `noOfferSinceHours(row)`: null jeśli `offer_sent_at != null`, `external_offer_sent=true`, lub status w `{lost,cancelled,deposit_paid,completed}`; inaczej godziny od `created_at`. `SlaBadge`: `{hours}h bez oferty` orange >24 h, red >48 h, niewidoczny <24 h. Sortowanie „⏱ Bez oferty od" przybliżone przez `sortSla` toggle. `offer_sent_at` dodano do select query w `page.tsx`.
+
+8. **`GET /api/cron/offer-sla`** (`src/app/api/cron/offer-sla/route.ts`) — Bearer `CRON_SECRET` (401 bez); query `offer_sent_at IS NULL + external_offer_sent=false + status NOT IN (lost,cancelled,deposit_paid,completed) + created_at < NOW()-48h`. Zero wyników → `{overdue:0}`. `OWNER_EMAIL` nieustawiony → `{overdue:N, mailed:false}`. Gdy N>0 i `OWNER_EMAIL` ustawiony → digest HTML (name | country | **status** | hours | admin link) przez Resend REST fetch; reply colors orange >72h red. `POST = GET` dla kompatybilności.
+
+9. **`vercel.json`** — `"0 5 * * *"` UTC = 07:00 CEST / 06:00 CET. Cron Vercel nie ma DST — schedules na stałe w UTC.
+
+10. **`src/lib/env.ts`** — `OWNER_EMAIL: z.string().email().optional()` (STOP: nie ustawiać na Vercelu bez zgody tj).
+
+11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` dodane ręcznie do Row/Insert/Update (lokalny Supabase niezdolny przez problem OrbStack z kontenerem Docker w czasie regeneracji; kolumna jest w baselinie i nowej migracji, typy odpowiadają schematowi).
+
+12. **`docs/deferred-tasks.md`** — wpis FA-0.16: agent-guard blokuje `db reset` i `migration repair --local` tak samo jak operacje prod; brak odblokowania per polecenie; zadanie S: naprawić wzorce i komunikat.
+
+### Nie zrobione
+
+- Produkcja: migracja **nie** zaaplikowana — STOP gate; tj wykonuje po merge PR.
+- `supabase gen types --local`: lokalny kontener Docker (OrbStack) unhealthy w czasie sesji → typy zaktualizowane ręcznie. Trzeba zregenerować po naprawie kontenera lub po `db reset` lokalnym w kolejnej sesji.
+- Zrzuty ekranu Playwright: lokalny serwer (`pnpm start`) wymaga `.env.local` → `pnpm dev` zakazany per MEMORY. Dowody wizualne do zrzucenia przez tj.
+- Curl proof crona: wymaga działającego `pnpm start`; jak wyżej.
+- `psql` red proof CHECK: lokalny kontener unhealthy; wykonuje tj po naprawie lub na prod po migracji.
+
+### Zauważone, odłożone
+
+- Lokalny Supabase kontener OrbStack unhealthy przez EOF przy Docker socket; diagnoza w tej sesji; nie ma związku z migracją FA-0.16.
+- `agent-guard.sh` / `FA_ALLOW_PROD=1` — patrz `docs/deferred-tasks.md` FA-0.16 (i FA-1.01 wcześniej).
+
+### Decyzje
+
+- Algorytm business days: sobota → snap do poniedziałku → +2 = środa (nie sobota+2=poniedziałek). Zatwierdzone przez test case w dialogu.
+- Email wording: oba miejsca (body + badge) zmienione. Zatwierdzone przez tj w dialogu STOP.
+- Digest email: inline HTML przez Resend REST (nie React email template) — cron route samowystarczalny.
+- `vercel.json` `"0 5 * * *"`: DST caveat zanotowany w komentarzu modułu i w notatce powyżej.
+

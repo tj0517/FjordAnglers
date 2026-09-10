@@ -28,6 +28,7 @@ export interface InquiryRow {
   guide_acceptance:        string | null
   guide_decline_reason:    string | null
   external_offer_sent:     boolean
+  offer_sent_at:           string | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -135,6 +136,14 @@ function silenceDays(row: InquiryRow): number {
   return Math.floor((Date.now() - new Date(ref).getTime()) / 86_400_000)
 }
 
+const SLA_STATUSES_EXCLUDED = new Set(['lost', 'cancelled', 'deposit_paid', 'completed'])
+
+function noOfferSinceHours(row: InquiryRow): number | null {
+  if (row.offer_sent_at != null || row.external_offer_sent) return null
+  if (SLA_STATUSES_EXCLUDED.has(row.status)) return null
+  return (Date.now() - new Date(row.created_at).getTime()) / 3_600_000
+}
+
 function needsAttention(row: InquiryRow): boolean {
   if (!ACTIVE_STATUSES.has(row.status)) return false
   if (row.last_contact_at == null) return true
@@ -152,6 +161,25 @@ function guideStage(row: InquiryRow, hasOffer: boolean): GuideStage {
   if (row.guide_acceptance === 'declined') return 'declined'
   if (row.guide_acceptance == null) return 'awaiting_response'
   return (hasOffer || row.external_offer_sent) ? 'offer_sent' : 'needs_offer'
+}
+
+// ─── SlaBadge ─────────────────────────────────────────────────────────────────
+
+function SlaBadge({ row }: { row: InquiryRow }) {
+  const hours = noOfferSinceHours(row)
+  if (hours == null || hours < 24) return null
+
+  const isRed    = hours > 48
+  const bg     = isRed ? 'rgba(239,68,68,0.12)'  : 'rgba(234,88,12,0.1)'
+  const color  = isRed ? '#DC2626'               : '#EA580C'
+  const border = isRed ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(234,88,12,0.28)'
+
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold f-body"
+      style={{ background: bg, color, border }}>
+      {Math.floor(hours)}h no offer
+    </span>
+  )
 }
 
 // ─── SilenceBadge ─────────────────────────────────────────────────────────────
@@ -230,10 +258,11 @@ export function InquiriesClient({ allRows, tripMap, slugMap, countryMap, guideMa
   const [view,       setView      ] = useState<'angler' | 'guide'>(() =>
     searchParams.get('view') === 'guide' ? 'guide' : 'angler'
   )
-  const [q,      setQ     ] = useState(() => searchParams.get('q')    ?? '')
-  const [localQ, setLocalQ] = useState(() => searchParams.get('q')    ?? '')
-  const [from,   setFrom  ] = useState(() => searchParams.get('from') ?? '')
-  const [to,     setTo    ] = useState(() => searchParams.get('to')   ?? '')
+  const [q,       setQ      ] = useState(() => searchParams.get('q')    ?? '')
+  const [localQ,  setLocalQ ] = useState(() => searchParams.get('q')    ?? '')
+  const [from,    setFrom   ] = useState(() => searchParams.get('from') ?? '')
+  const [to,      setTo     ] = useState(() => searchParams.get('to')   ?? '')
+  const [sortSla, setSortSla] = useState(false)
 
   // Sync filter state → URL (replace, not push, so back-button skips filter changes)
   const mounted = useRef(false)
@@ -292,8 +321,12 @@ export function InquiriesClient({ allRows, tripMap, slugMap, countryMap, guideMa
     if (from) result = result.filter(r => r.created_at >= from)
     if (to)   result = result.filter(r => r.created_at.slice(0, 10) <= to)
 
+    if (sortSla) {
+      result = [...result].sort((a, b) => (noOfferSinceHours(b) ?? 0) - (noOfferSinceHours(a) ?? 0))
+    }
+
     return result
-  }, [allRows, mainFilter, subFilter, q, from, to])
+  }, [allRows, mainFilter, subFilter, q, from, to, sortSla])
 
   // ── Stats (always from full data) ───────────────────────────────────────────
   const { totalCommission, hasMixedCurrency, convPct } = useMemo(() => {
@@ -658,8 +691,8 @@ export function InquiriesClient({ allRows, tripMap, slugMap, countryMap, guideMa
         )}
       </div>
 
-      {/* ─── View toggle ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mb-5">
+      {/* ─── View toggle + SLA sort ──────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         {(['angler', 'guide'] as const).map(v => (
           <button
             key={v}
@@ -674,6 +707,19 @@ export function InquiriesClient({ allRows, tripMap, slugMap, countryMap, guideMa
             {v === 'angler' ? '👤 Angler view' : '🎣 Guide view'}
           </button>
         ))}
+
+        <button
+          onClick={() => setSortSla(s => !s)}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold f-body transition-all"
+          style={{
+            background: sortSla ? 'rgba(239,68,68,0.1)'  : 'rgba(10,46,77,0.06)',
+            color:      sortSla ? '#DC2626'               : 'rgba(10,46,77,0.55)',
+            border:     sortSla ? '1px solid rgba(239,68,68,0.25)' : '1px solid rgba(10,46,77,0.1)',
+          }}
+          title="Sort: inquiries without offer, oldest first"
+        >
+          ⏱ Bez oferty od
+        </button>
       </div>
 
       {/* ─── Results count ───────────────────────────────────────────── */}
@@ -846,6 +892,7 @@ export function InquiriesClient({ allRows, tripMap, slugMap, countryMap, guideMa
                       style={{ background: st.bg, color: st.color, border: st.border }}>
                       {st.label}
                     </span>
+                    <SlaBadge row={row} />
                     {row.internal_commission_eur != null && (
                       <span className="text-xs font-bold f-body" style={{ color: '#E67E50' }}>
                         +{row.deal_currency === 'USD' ? '$' : '€'}{Number(row.internal_commission_eur).toFixed(0)}

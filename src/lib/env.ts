@@ -96,6 +96,8 @@ export const envSchema = z.object({
   // ── Cron ───────────────────────────────────────────────────────────────────
   // Bearer token used to authenticate Vercel cron job requests.
   CRON_SECRET: z.string().optional(),
+  // Recipient for daily SLA digest email (ops inbox). If not set, cron runs but does not mail.
+  OWNER_EMAIL: z.string().email().optional(),
 
   // ── Google Ads API ─────────────────────────────────────────────────────────
   // All optional — cron silently skips sync if not configured.
