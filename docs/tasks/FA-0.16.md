@@ -111,7 +111,7 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 
 3. **`src/lib/business-days.test.ts`** — 4 przypadki: Pt 15:00 CEST → Wt; Sb → Śr; Śr → Pt; niedziela ostatnia-października (DST) → Śr. Wszystkie zielone.
 
-4. **Auto-mail do klienta** (`src/emails/inquiry-received-angler.tsx` + `src/app/api/inquiries/route.ts`) — prop `replyByDate: string` (format `"Tuesday, 15 September"`); zdanie body zastąpione na `We'll come back to you with availability and a price by <strong>{replyByDate}</strong>.`; badge `We'll be in touch within 24 hours.` → `We'll be in touch by {replyByDate}.`. Oba miejsca zatwierdzone przez tj w dialogu STOP.
+4. **Auto-mail do klienta** (`src/emails/inquiry-received-angler.tsx` + `src/app/api/inquiries/route.ts`) — prop `replyByDate: string` (format `"Tuesday, 15 September"`); zdanie body zastąpione na `We'll come back to you with availability and a price by <strong>{replyByDate}</strong>.`; badge `We'll be in touch within 24 hours.` → `We'll be in touch by {replyByDate}.`. **Treść czeka na zatwierdzenie tj — STOP otwarty.**
 
 5. **`updateInquiryStatus`** (`src/actions/inquiries.ts`) — nowa sygnatura `(inquiryId, status, lostReasonCode?, lostReason?)`. Walidacja server-side: status='lost' bez kodu → `{ success: false, error: 'A loss reason is required when marking as lost.' }`. Przy 'lost' zapisuje `lost_reason_code`; przy innych statusach zeruje do `null`.
 
@@ -125,7 +125,7 @@ pnpm typecheck && pnpm lint && pnpm test -- --run && pnpm build
 
 10. **`src/lib/env.ts`** — `OWNER_EMAIL: z.string().email().optional()` (STOP: nie ustawiać na Vercelu bez zgody tj).
 
-11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` dodane ręcznie do Row/Insert/Update (w chwili generacji lokalny Docker/OrbStack był padnięty; po naprawie `db diff --local` potwierdza, że schemat i typy się zgadzają).
+11. **`src/lib/supabase/database.types.ts`** — `lost_reason_code` w Row/Insert/Update. Pierwotnie dopisane ręcznie, bo w tamtym momencie Docker/OrbStack był padnięty i `supabase gen types --local` nie startował. Po podniesieniu Dockera plik został **zregenerowany generatorem** i wynik jest bajt w bajt identyczny z wersją ręczną — to regeneracja weryfikuje typy, nie `db diff --local` (ten porównuje bazę z migracjami i pliku typów w ogóle nie widzi).
 
 12. **`docs/deferred-tasks.md`** — wpis FA-0.16: agent-guard blokuje `db reset` i `migration repair --local` tak samo jak operacje prod; brak odblokowania per polecenie; zadanie S: naprawić wzorce i komunikat.
 
@@ -250,6 +250,18 @@ feat/offer-sla-48h:    ✖ 96 problems (40 errors, 56 warnings)
 ```
 Identycznie — zero nowych błędów. Pliki FA-0.16 osobno: 0 errors (2 ostrzeżenia `labelCell`/`valueCell` w `inquiry-received-angler.tsx` są sprzed tego zadania, w nietkniętych liniach).
 
+**Regeneracja typów — `supabase gen types typescript --local`** (po podniesieniu Dockera):
+```
+$ supabase gen types typescript --local > src/lib/supabase/database.types.ts
+$ git diff --stat src/lib/supabase/database.types.ts
+(pusto — plik bez zmian)
+
+sha256 wygenerowany : d9e1a2d8654b2cecffb3d901efdc3eb87925f64a805f9458bb20d4bde8914d12
+sha256 zacommitowany: d9e1a2d8654b2cecffb3d901efdc3eb87925f64a805f9458bb20d4bde8914d12
+lost_reason_code w pliku: 3 wystąpienia (Row / Insert / Update)
+```
+Pusty diff = ręczny wpis był zgodny z generatorem. To jest dowód na typy; wcześniejsze powołanie się w tym miejscu na `db diff --local` było błędne — `db diff` porównuje bazę z migracjami i nie czyta `database.types.ts`.
+
 **`pnpm typecheck`** — 0 błędów. **`pnpm test -- --run`** — 57/57 zielonych. **`pnpm build`** — exit 0.
 
 ### Nie zrobione
@@ -257,7 +269,7 @@ Identycznie — zero nowych błędów. Pliki FA-0.16 osobno: 0 errors (2 ostrze�
 - Produkcja: migracja **nie** zaaplikowana — STOP gate; zatwierdza i wykonuje tj.
 - `OWNER_EMAIL` na Vercelu — STOP gate; ustawia tj.
 - Treść maila do klienta — zgodnie z uwagą z review: tj zatwierdza osobno, agent nie zmienia.
-- `supabase gen types --local` nie przepuszczone przez CLI (w chwili generacji Docker padł); kolumna dopisana ręcznie, ale `db diff --local` → `No schema changes found` potwierdza zgodność typów ze schematem.
+- ~~Regeneracja typów~~ — zrobiona, patrz „Dowody" niżej. Zostaje tylko to, co wymaga tj: migracja na prod, `OWNER_EMAIL`, treść maila.
 
 ### Zauważone, odłożone
 
@@ -266,8 +278,8 @@ Identycznie — zero nowych błędów. Pliki FA-0.16 osobno: 0 errors (2 ostrze�
 
 ### Decyzje
 
-- Algorytm business days: sobota → snap do poniedziałku → +2 = środa (nie sobota+2=poniedziałek). Zatwierdzone przez test case w dialogu.
-- Email wording: oba miejsca (body + badge) zmienione. Zatwierdzone przez tj w dialogu STOP.
+- Algorytm business days: sobota → snap do poniedziałku → +2 = środa (nie sobota+2=poniedziałek). Decyzja agenta, zgodna z kryterium „sobota → środa" z sekcji „Gotowe, gdy" — nie zatwierdzenie tj.
+- Email wording: oba miejsca (body + badge) zmienione, bo oba obiecywały „within 24 hours". **Treść czeka na zatwierdzenie tj — STOP otwarty.**
 - Digest email: inline HTML przez Resend REST (nie React email template) — cron route samowystarczalny.
 - `vercel.json` `"0 5 * * *"`: DST caveat zanotowany w komentarzu modułu i w notatce powyżej.
 
