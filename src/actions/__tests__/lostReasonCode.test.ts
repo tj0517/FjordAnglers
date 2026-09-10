@@ -88,6 +88,7 @@ describe('FA-0.16 — updateInquiryStatus / lost_reason_code', () => {
     const result = await updateInquiryStatus('inq-1', 'lost')
 
     expect(result.success).toBe(false)
+    if (result.success) throw new Error('expected failure')
     expect(result.error).toBe('A loss reason is required when marking as lost.')
     expect(capturedUpdate).toBeNull() // never reached the write
   })
