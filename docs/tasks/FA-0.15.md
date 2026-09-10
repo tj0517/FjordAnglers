@@ -2,7 +2,7 @@
 id: FA-0.15
 title: Własna telemetria lejka bez cookies — `web_events` (page_view / form_open / form_submit per strona)
 stage: 0
-status: review
+status: done
 difficulty: M
 model: sonnet
 model_approved:
@@ -208,6 +208,20 @@ DELETE FROM inquiries WHERE id='34ec7374-09f0-4691-939e-3f462eff2088' RETURNING 
  34ec7374-09f0-4691-939e-3f462eff2088 | E2E Test    | e2e-test@example.com | pending | 2026-09-09 12:51:23.281324+00
 DELETE 1
 ```
+
+### Smoke prod (2026-09-09)
+
+Migracja zastosowana przez MCP `supabase-fa`, smoke test ręczny od tj:
+
+```
+ id |   event   |                      path                      | country   | utm_campaign | utm_content | device  | referrer_host
+----+-----------+------------------------------------------------+-----------+--------------+-------------+---------+---------------------
+  2 | form_open | /experiences/fly-fishing-bariloche-limay-manso | null      | null         | null        | desktop | www.fjordanglers.com
+  1 | page_view | /experiences/fly-fishing-bariloche-limay-manso | Argentina | smoke        | 1           | desktop | www.fjordanglers.com
+(2 wiersze, id 1–2)
+```
+
+`country=Argentina` z `experience_pages.country` ✓ · `utm_campaign=smoke` zapisany ✓ · `referrer_host=www.fjordanglers.com` ✓ · `form_open` → UTM i country NULL ✓
 
 ### Raport (format §5)
 
