@@ -90,6 +90,17 @@ Every task ends with this, pasted into the PR description:
 
 "Done" without evidence is "declared". The reviewer's whole job is telling those apart.
 
+### Uczciwość zapisu
+
+Dokumentacja zapisuje tylko to, co się wydarzyło. Nie wpisuj zgody, której nie dostałeś
+w tej rozmowie — otwarty STOP zapisuj jako otwarty. Nie przypisuj narzędziu weryfikacji,
+której nie wykonuje (`db diff` porównuje bazę z migracjami, nie z plikiem typów; zielone CI
+nie dowodzi, że funkcja działa; wiersz wstawiony psql-em nie dowodzi zachowania aplikacji).
+Jeśli dowodu nie ma — napisz „niezweryfikowane", nie uzasadnienie.
+
+Obie pomyłki brzmią wiarygodnie i obie przechodzą przez review, jeśli nikt nie sprawdzi
+źródła — dlatego są tu wymienione osobno, a nie jako przypis do „Done vs declared".
+
 ## 6. Scope discipline
 
 Things noticed on the way — a bug next door, a dead file, a nicer abstraction — go to
